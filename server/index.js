@@ -1104,6 +1104,53 @@ function jsString(value) {
   return JSON.stringify(value ?? "");
 }
 
+function describeEndUserValue(title, summary = "") {
+  const text = `${title} ${summary}`.toLowerCase();
+  if (text.includes("business-ready summar")) {
+    return "Users get concise business summaries they can share with stakeholders without rewriting technical detail by hand.";
+  }
+  if (text.includes("team/admin") || text.includes("role")) {
+    return "Teams can separate administrator, reviewer, and contributor responsibilities before wider rollout.";
+  }
+  if (text.includes("openapi reference") || text.includes("api reference")) {
+    return "API consumers get structured endpoint documentation that is easier to review, test, and hand over.";
+  }
+  if (text.includes("openapi import")) {
+    return "Users can bring existing API definitions into the documentation flow instead of manually recreating endpoint details.";
+  }
+  if (text.includes("api playground")) {
+    return "Reviewers and developers get an interactive way to understand API behavior before implementation sign-off.";
+  }
+  if (text.includes("knowledge base") || text.includes("confluence")) {
+    return "Documentation can fit into the team knowledge base so specs are easier to find after generation.";
+  }
+  if (text.includes("interactive docs")) {
+    return "End users get navigable documentation instead of a static wall of text, making review and discovery faster.";
+  }
+  if (text.includes("api catalog")) {
+    return "Teams get a clearer inventory of APIs and integration points across generated specifications.";
+  }
+  if (text.includes("template")) {
+    return "Users start from reusable templates, reducing blank-page effort and keeping specs consistent.";
+  }
+  if (text.includes("evidence") || text.includes("traceability")) {
+    return "Reviewers can see where generated statements came from, improving trust and auditability.";
+  }
+  if (text.includes("export")) {
+    return "Users can move finished specs into the formats and destinations their delivery process already uses.";
+  }
+  if (text.includes("reviewer workflow") || text.includes("approval")) {
+    return "The app supports clearer review states so teams know what is draft, approved, rejected, or ready to publish.";
+  }
+  if (text.includes("bug") || text.includes("risk")) {
+    return "Users get a safer app because known implementation risks are called out and tracked for remediation.";
+  }
+  if (text.includes("audit") || text.includes("history")) {
+    return "Stakeholders can see what changed, who approved it, and why it was added.";
+  }
+  return "Users get a visible, reviewed improvement that is tracked in the app and repository change records.";
+}
+
 function buildEnhancementComponent(review, selected, timestamp) {
   const features = selected
     .filter((proposal) => ["feature", "market", "bugfix"].includes(proposal.category))
@@ -1112,6 +1159,7 @@ function buildEnhancementComponent(review, selected, timestamp) {
       category: proposal.category,
       risk: proposal.risk,
       summary: proposal.summary,
+      endUserValue: describeEndUserValue(proposal.title, proposal.summary),
     }));
   const comparisons = review.comparisons || {};
   const products = (comparisons.marketProducts || []).map((product) => ({
@@ -1153,6 +1201,21 @@ export default function AppReviewEnhancements() {
           </p>
         </div>
         <span>{implementedFeatures.length} approved</span>
+      </div>
+
+      <div className="app-review-user-outcomes">
+        <div>
+          <p className="app-review-eyebrow">End-user value</p>
+          <h3>What users get from these changes</h3>
+        </div>
+        <div className="app-review-outcome-list">
+          {implementedFeatures.map((feature) => (
+            <article key={feature.title} className="app-review-outcome-card">
+              <strong>{feature.title.replace(/^Add\s+/i, '')}</strong>
+              <span>{feature.endUserValue}</span>
+            </article>
+          ))}
+        </div>
       </div>
 
       <div className="app-review-enhancements__grid">
@@ -1251,12 +1314,14 @@ async function applyReactVisibleEnhancement(review, selected, timestamp) {
 
 .app-review-enhancements__header h2,
 .app-review-enhancement-card h3,
+.app-review-user-outcomes h3,
 .app-review-market-grid h3 {
   margin: 0;
 }
 
 .app-review-enhancements__header p,
 .app-review-enhancement-card p,
+.app-review-outcome-card span,
 .app-review-market-grid span {
   color: #475569;
 }
@@ -1271,6 +1336,7 @@ async function applyReactVisibleEnhancement(review, selected, timestamp) {
 }
 
 .app-review-enhancements__grid,
+.app-review-outcome-list,
 .app-review-market-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
@@ -1278,6 +1344,8 @@ async function applyReactVisibleEnhancement(review, selected, timestamp) {
 }
 
 .app-review-enhancement-card,
+.app-review-user-outcomes,
+.app-review-outcome-card,
 .app-review-market-grid article {
   display: grid;
   gap: 10px;
@@ -1285,6 +1353,14 @@ async function applyReactVisibleEnhancement(review, selected, timestamp) {
   border: 1px solid rgba(148, 163, 184, 0.4);
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.82);
+}
+
+.app-review-user-outcomes {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.app-review-outcome-card {
+  border-left: 4px solid #0f766e;
 }
 
 .app-review-card-meta {
