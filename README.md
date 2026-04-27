@@ -26,9 +26,11 @@ Each review checks local repository signals plus internet-sourced metadata where
 
 - GitHub repository metadata such as default branch, open issue count, latest push time, archive status, and license.
 - npm registry freshness for declared dependencies.
+- Comparable-app/product scan using public GitHub repository search and npm package search, with fallback feature generation when public comparison data is weak.
 - Static bug-risk patterns such as TODO/FIXME markers, hard-coded credential-looking values, `eval`, direct `innerHTML`, and console diagnostics.
 - Project hygiene signals such as README, CI workflow, environment example, lockfile, tests, and deployment contract.
 - Feature proposals for audit visibility and safer deployment operations.
+- Domain-specific feature proposals, for example SAP/technical-spec template packs, evidence traceability, export destinations, and reviewer workflow when the app appears to be a technical specification generator.
 
 When proposals are approved, the changed target repository receives Markdown audit files:
 

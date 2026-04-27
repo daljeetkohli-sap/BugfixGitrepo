@@ -75,13 +75,28 @@ function runCommand(command, args, options = {}) {
   return new Promise((resolve) => {
     const startedAt = Date.now();
     const executable = process.platform === "win32" ? windowsCommandPaths[command] || command : command;
-    const child = spawn(executable, args, {
-      cwd: options.cwd || rootDir,
-      shell: false,
-      env: { ...process.env, ...(options.env || {}) },
-    });
+    const isWindowsCmd = process.platform === "win32" && executable.toLowerCase().endsWith(".cmd");
+    const spawnCommand = isWindowsCmd ? "cmd.exe" : executable;
+    const spawnArgs = isWindowsCmd ? ["/d", "/s", "/c", `"${executable}" ${args.join(" ")}`] : args;
     let stdout = "";
     let stderr = "";
+    let child;
+    try {
+      child = spawn(spawnCommand, spawnArgs, {
+        cwd: options.cwd || rootDir,
+        shell: false,
+        env: { ...process.env, ...(options.env || {}) },
+      });
+    } catch (error) {
+      resolve({
+        command: [spawnCommand, ...spawnArgs].join(" "),
+        code: -1,
+        stdout,
+        stderr: `${error.code || "SPAWN_ERROR"}: ${error.message}`,
+        durationMs: Date.now() - startedAt,
+      });
+      return;
+    }
     child.stdout.on("data", (data) => {
       stdout += data.toString();
     });
@@ -90,7 +105,7 @@ function runCommand(command, args, options = {}) {
     });
     child.on("error", (error) => {
       resolve({
-        command: [executable, ...args].join(" "),
+        command: [spawnCommand, ...spawnArgs].join(" "),
         code: -1,
         stdout: stdout.trim(),
         stderr: `${error.code || "SPAWN_ERROR"}: ${error.message}`,
@@ -99,7 +114,7 @@ function runCommand(command, args, options = {}) {
     });
     child.on("close", (code) => {
       resolve({
-        command: [executable, ...args].join(" "),
+        command: [spawnCommand, ...spawnArgs].join(" "),
         code,
         stdout: stdout.trim(),
         stderr: stderr.trim(),
@@ -223,6 +238,182 @@ async function fetchNpmLatest(name) {
   }
 }
 
+function inferAppProfile(repoUrl, packageJson, readmeText) {
+  const parsed = parseGitHubRepo(repoUrl);
+  const raw = [
+    parsed?.repo || "",
+    packageJson?.name || "",
+    packageJson?.description || "",
+    readmeText.slice(0, 5000),
+  ].join(" ").toLowerCase();
+  const compact = raw.replace(/[^a-z0-9]+/g, " ");
+
+  if (/sap|abap|fiori|technical spec|tech spec|specification|confluence|documentation|docx/.test(compact)) {
+    return {
+      category: "Technical specification and SAP documentation generator",
+      searchTerms: [
+        "technical specification generator",
+        "sap documentation generator",
+        "software documentation generator",
+        "confluence documentation generator",
+      ],
+      featureIdeas: [
+        {
+          id: "feature-template-marketplace",
+          title: "Add reusable template packs",
+          summary: "Comparable documentation tools usually win through reusable templates. Add SAP/Fiori/API/integration template packs with required sections, examples, and review gates.",
+        },
+        {
+          id: "feature-evidence-traceability",
+          title: "Add source evidence traceability",
+          summary: "Generated specs should link every major statement back to uploaded screenshots, code snippets, endpoints, or user answers so reviewers can audit accuracy.",
+        },
+        {
+          id: "feature-export-destinations",
+          title: "Add export destinations",
+          summary: "Add one-click exports to DOCX, Markdown, Confluence-ready HTML, and Git commit files so generated specs fit common enterprise documentation workflows.",
+        },
+        {
+          id: "feature-review-workflow",
+          title: "Add reviewer workflow",
+          summary: "Add draft, reviewed, approved, and rejected states with comments so technical specs can move through business analyst, developer, and architect review.",
+        },
+      ],
+    };
+  }
+
+  if (/bug|review|repo|github|pull request|automation|ci|deploy/.test(compact)) {
+    return {
+      category: "GitHub repository review and automation tool",
+      searchTerms: [
+        "github repository review automation",
+        "code review automation dashboard",
+        "dependency update bot",
+        "pull request review automation",
+      ],
+      featureIdeas: [
+        {
+          id: "feature-pr-mode",
+          title: "Create pull requests instead of direct pushes",
+          summary: "Most mature repo automation tools propose changes through pull requests with a diff, checks, and reviewer approval rather than pushing directly to the main branch.",
+        },
+        {
+          id: "feature-risk-scoring",
+          title: "Add proposal risk scoring",
+          summary: "Rank proposals by blast radius, confidence, evidence source, and rollback complexity so users can approve low-risk changes quickly and scrutinize high-risk ones.",
+        },
+        {
+          id: "feature-scheduled-comparison",
+          title: "Add scheduled comparison reports",
+          summary: "Generate a daily report showing new comparable-tool features, dependency releases, security advisories, and app-specific recommendations.",
+        },
+      ],
+    };
+  }
+
+  return {
+    category: "General web application",
+    searchTerms: ["web app dashboard best practices", "open source web application dashboard", "product analytics dashboard"],
+    featureIdeas: [
+      {
+        id: "feature-onboarding-checklist",
+        title: "Add onboarding checklist",
+        summary: "Add a guided first-run checklist that helps users connect data, configure settings, run a sample job, and understand next actions.",
+      },
+      {
+        id: "feature-observability",
+        title: "Add built-in observability",
+        summary: "Expose job history, errors, timings, and audit events so operators can diagnose failures without reading server logs.",
+      },
+      {
+        id: "feature-role-based-access",
+        title: "Add role-based access",
+        summary: "Separate viewer, approver, and administrator abilities before deploying the app to other users.",
+      },
+    ],
+  };
+}
+
+async function fetchGitHubComparableRepos(searchTerms, currentRepoUrl) {
+  const current = parseGitHubRepo(currentRepoUrl);
+  const results = [];
+  const genericNames = /(^|\/)(awesome|public-apis|free-programming-books|project-based-learning|developer-roadmap)(-|$|\/)/i;
+  const meaningfulTokens = (term) => term.split(/\s+/).filter((token) => token.length > 3 && !["generator", "automation", "dashboard"].includes(token));
+  for (const term of searchTerms.slice(0, 3)) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4500);
+    try {
+      const query = encodeURIComponent(`${term} in:name,description,readme`);
+      const response = await fetch(`https://api.github.com/search/repositories?q=${query}&sort=stars&order=desc&per_page=5`, {
+        signal: controller.signal,
+        headers: {
+          accept: "application/vnd.github+json",
+          "user-agent": "adhoc-github-reviewer",
+        },
+      });
+      if (!response.ok) continue;
+      const data = await response.json();
+      for (const item of data.items || []) {
+        if (current && item.full_name?.toLowerCase() === `${current.owner}/${current.repo}`.toLowerCase()) continue;
+        if (results.some((result) => result.fullName === item.full_name)) continue;
+        const haystack = `${item.full_name || ""} ${item.description || ""}`.toLowerCase();
+        const tokens = meaningfulTokens(term);
+        const relevant = tokens.length === 0 || tokens.some((token) => haystack.includes(token));
+        if (genericNames.test(item.full_name || "") || !relevant) continue;
+        results.push({
+          fullName: item.full_name,
+          description: item.description || "",
+          stars: item.stargazers_count || 0,
+          url: item.html_url,
+          term,
+        });
+      }
+    } catch {
+      // Keep the review moving when public search is rate-limited or unavailable.
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  return results.slice(0, 8);
+}
+
+async function fetchNpmComparablePackages(searchTerms) {
+  const results = [];
+  const blocked = /^(is-|has-|get-|set-|array-|object-|string-|emojibase)/i;
+  const meaningfulTokens = (term) => term.split(/\s+/).filter((token) => token.length > 4 && !["generator", "automation", "dashboard"].includes(token));
+  for (const term of searchTerms.slice(0, 2)) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4500);
+    try {
+      const response = await fetch(`https://registry.npmjs.org/-/v1/search?text=${encodeURIComponent(term)}&size=5`, {
+        signal: controller.signal,
+        headers: { accept: "application/json" },
+      });
+      if (!response.ok) continue;
+      const data = await response.json();
+      for (const item of data.objects || []) {
+        const pkg = item.package || {};
+        if (!pkg.name || results.some((result) => result.name === pkg.name)) continue;
+        const haystack = `${pkg.name || ""} ${pkg.description || ""}`.toLowerCase();
+        const tokens = meaningfulTokens(term);
+        const relevant = tokens.length === 0 || tokens.some((token) => haystack.includes(token));
+        if (blocked.test(pkg.name) || !relevant) continue;
+        results.push({
+          name: pkg.name,
+          description: pkg.description || "",
+          version: pkg.version || "",
+          term,
+        });
+      }
+    } catch {
+      // Keep the review moving when npm search is unavailable.
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  return results.slice(0, 6);
+}
+
 async function scanBugRisks(repoDir, files) {
   const sourceFiles = files
     .filter((file) => /\.(js|jsx|ts|tsx|mjs|cjs|json|env|md|yml|yaml)$/i.test(file))
@@ -264,6 +455,9 @@ async function buildReview(runId, repoUrl, repoDir) {
 
   const packageJsonPath = path.join(repoDir, "package.json");
   const packageJson = await readOptionalJson(packageJsonPath);
+  const readmeFile = files.find((file) => /^readme\.md$/i.test(file));
+  const readmeText = readmeFile ? await readOptionalText(path.join(repoDir, readmeFile)) : "";
+  const appProfile = inferAppProfile(repoUrl, packageJson, readmeText);
   const githubMetadata = await fetchGitHubRepoMetadata(repoUrl);
   if (githubMetadata) {
     addLog(
@@ -275,8 +469,33 @@ async function buildReview(runId, repoUrl, repoDir) {
     addLog("error", "Internet check: GitHub repository metadata unavailable", "Could not read GitHub repository metadata for this URL.");
   }
 
+  const comparableRepos = await fetchGitHubComparableRepos(appProfile.searchTerms, repoUrl);
+  const comparablePackages = await fetchNpmComparablePackages(appProfile.searchTerms);
+  if (comparableRepos.length) {
+    addLog(
+      "success",
+      `Market comparison: ${appProfile.category}`,
+      comparableRepos
+        .slice(0, 5)
+        .map((repo) => `${repo.fullName} (${repo.stars} stars)`)
+        .join("; "),
+    );
+  } else {
+    addLog("error", `Market comparison: ${appProfile.category}`, "No comparable GitHub repositories were returned; using generated feature proposals.");
+  }
+  if (comparablePackages.length) {
+    addLog(
+      "success",
+      "Market comparison: npm packages",
+      comparablePackages
+        .slice(0, 4)
+        .map((pkg) => `${pkg.name}@${pkg.version}`)
+        .join("; "),
+    );
+  }
+
   const hasGitHubActions = files.some((file) => file.startsWith(".github/workflows/"));
-  const hasReadme = files.some((file) => /^readme\.md$/i.test(file));
+  const hasReadme = Boolean(readmeFile);
   const hasEnvExample = files.some((file) => [".env.example", ".env.sample"].includes(file.toLowerCase()));
   const hasTests = files.some((file) => /\.(test|spec)\.[jt]sx?$/.test(file) || file.includes("__tests__/"));
   const hasLockfile = files.some((file) => ["package-lock.json", "pnpm-lock.yaml", "yarn.lock"].includes(file));
@@ -296,6 +515,46 @@ async function buildReview(runId, repoUrl, repoDir) {
       status: "pending",
       summary: "GitHub metadata does not report a repository license. Add a LICENSE file so reuse and ownership expectations are clear.",
       action: { type: "append-review-doc", heading: "License recommendation", body: "Add a LICENSE file and document any internal usage restrictions in README.md." },
+    });
+  }
+
+  proposals.push({
+    id: "market-comparison-summary",
+    title: "Record comparable-app market scan",
+    category: "market",
+    risk: "low",
+    status: "pending",
+    summary: comparableRepos.length
+      ? `Compared this app against public GitHub projects for ${appProfile.searchTerms.join(", ")}. Top comparable signals include ${comparableRepos.slice(0, 3).map((repo) => repo.fullName).join(", ")}.`
+      : `No strong public GitHub comparable results were returned for ${appProfile.searchTerms.join(", ")}; use the generated feature proposals as a baseline product roadmap.`,
+    action: {
+      type: "append-review-doc",
+      heading: "Comparable-app market scan",
+      body: [
+        `App category inferred: ${appProfile.category}.`,
+        comparableRepos.length
+          ? `Comparable GitHub repositories: ${comparableRepos.map((repo) => `${repo.fullName} (${repo.stars} stars, ${repo.url})`).join("; ")}.`
+          : "No comparable GitHub repositories were returned by public search.",
+        comparablePackages.length
+          ? `Comparable npm packages: ${comparablePackages.map((pkg) => `${pkg.name}@${pkg.version}`).join("; ")}.`
+          : "No comparable npm packages were returned by public search.",
+      ].join(" "),
+    },
+  });
+
+  for (const idea of appProfile.featureIdeas) {
+    proposals.push({
+      id: idea.id,
+      title: idea.title,
+      category: "feature",
+      risk: "medium",
+      status: "pending",
+      summary: idea.summary,
+      action: {
+        type: "append-review-doc",
+        heading: idea.title,
+        body: `${idea.summary} Basis: inferred category '${appProfile.category}' and comparable-app market scan terms '${appProfile.searchTerms.join(", ")}'.`,
+      },
     });
   }
 
