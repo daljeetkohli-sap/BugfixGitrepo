@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BugfixGitrepo Review Console</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">GitHub Pages preview</p>
+          <h1>Ad Hoc GitHub Reviewer</h1>
+          <p class="lead">
+            A public read-only view of the review workflow. The live operator app runs on Node.js so it can clone repositories, inspect logs, prepare proposals, and commit approved changes.
+          </p>
+        </div>
+        <a class="primary-link" href="https://github.com/daljeetkohli-sap/BugfixGitrepo">View source</a>
+      </section>
+
+      <section class="status-grid" aria-label="Application capabilities">
+        <article class="metric">
+          <span>Mode</span>
+          <strong>Read-only</strong>
+        </article>
+        <article class="metric">
+          <span>Backend</span>
+          <strong>Node.js</strong>
+        </article>
+        <article class="metric">
+          <span>Approval</span>
+          <strong>Operator only</strong>
+        </article>
+        <article class="metric">
+          <span>Deploy</span>
+          <strong>GitHub Pages</strong>
+        </article>
+      </section>
+
+      <section class="content-grid">
+        <article class="panel">
+          <h2>What someone can check here</h2>
+          <ul>
+            <li>The app purpose and user journey.</li>
+            <li>The review output model: errors, fixes, proposals, and approval status.</li>
+            <li>How the operator console is expected to be run locally or on a Node host.</li>
+          </ul>
+        </article>
+
+        <article class="panel">
+          <h2>What needs the Node app</h2>
+          <ul>
+            <li>Cloning a public GitHub repository.</li>
+            <li>Running repository checks and collecting logs.</li>
+            <li>Approving proposals and creating commits.</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="review-card">
+        <div class="review-header">
+          <div>
+            <p class="eyebrow">Sample review output</p>
+            <h2>Repository quality scan</h2>
+          </div>
+          <span class="badge">Example</span>
+        </div>
+
+        <div class="review-grid">
+          <article>
+            <h3>Errors Found</h3>
+            <p>No live errors are shown on GitHub Pages because this static page cannot run server-side commands.</p>
+          </article>
+          <article>
+            <h3>New Proposals</h3>
+            <p>Detected proposals appear in the Node operator console and read-only viewer after an actual run.</p>
+          </article>
+          <article>
+            <h3>Fixes Done</h3>
+            <p>Approved fixes are committed by the backend workflow, then can be pushed to GitHub.</p>
+          </article>
+          <article>
+            <h3>Reviewer Access</h3>
+            <p>This page is safe to share as a public preview. The commit approval controls stay out of this static view.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="commands">
+        <h2>Run the full app</h2>
+        <pre><code>git clone https://github.com/daljeetkohli-sap/BugfixGitrepo
+cd BugfixGitrepo
+npm start</code></pre>
+        <p>Then open <strong>http://localhost:4173</strong> for the operator console or <strong>http://localhost:4173/viewer.html</strong> for the live read-only viewer.</p>
+      </section>
+    </main>
+  </body>
+</html>
