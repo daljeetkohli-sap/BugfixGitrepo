@@ -12,6 +12,9 @@ const publicDir = path.join(rootDir, "public");
 const runsDir = path.join(rootDir, ".adhoc-runs");
 const stateFile = path.join(runsDir, "runs.json");
 const port = Number(process.env.PORT || 4173);
+const progressFileName = "APP_REVIEW_PROGRESS.md";
+const proposalsFileName = "REVIEW_PROPOSALS.md";
+const reviewLogFileName = "DAILY_REVIEW_LOG.md";
 
 const jsonHeaders = { "content-type": "application/json; charset=utf-8" };
 const mimeTypes = new Map([
@@ -243,7 +246,7 @@ async function buildReview(runId, repoUrl, repoDir) {
 
   fixes.push({
     status: "available-after-approval",
-    message: "Approved proposals are committed as REVIEW_PROPOSALS.md and DAILY_REVIEW_LOG.md updates in the cloned repo.",
+    message: `Approved proposals are committed with ${progressFileName}, ${proposalsFileName}, and ${reviewLogFileName} updates in the cloned repo.`,
   });
 
   return {
@@ -289,6 +292,39 @@ async function appendReviewFile(repoDir, title, lines) {
   await fs.writeFile(file, content, "utf8");
 }
 
+function buildProgressEntry(review, selected, timestamp) {
+  const lines = [
+    `# App Review Progress`,
+    ``,
+    `## Run ${review.id}`,
+    ``,
+    `Status: approved and queued for commit`,
+    `Reviewed at: ${review.createdAt}`,
+    `Approved at: ${timestamp}`,
+    `Source repo: ${review.repoUrl}`,
+    `Detected stack: ${review.summary.detectedStack}`,
+    `Files scanned: ${review.summary.filesScanned}`,
+    ``,
+    `### Errors found`,
+    ``,
+    ...(review.errors.length
+      ? review.errors.map((error) => `- [${error.severity}] ${error.area}: ${error.message}`)
+      : ["- No command errors captured."]),
+    ``,
+    `### Approved proposals`,
+    ``,
+    ...selected.map((proposal) => `- ${proposal.title} (${proposal.category}, ${proposal.risk} risk): ${proposal.summary}`),
+    ``,
+    `### Change record`,
+    ``,
+    `- ${progressFileName} records the end-to-end app review progress inside this changed repository.`,
+    `- ${proposalsFileName} records the approved proposal details.`,
+    `- ${reviewLogFileName} records command findings and approved fixes.`,
+    `- Commit is created by the ad hoc reviewer after these Markdown records are written.`,
+  ];
+  return lines;
+}
+
 async function approveProposals(runId, proposalIds) {
   const state = await readState();
   const review = state[runId];
@@ -297,7 +333,8 @@ async function approveProposals(runId, proposalIds) {
   if (!selected.length) throw new Error("Select at least one proposal to approve.");
 
   const timestamp = new Date().toISOString();
-  await appendReviewFile(review.repoDir, "REVIEW_PROPOSALS.md", [
+  await appendReviewFile(review.repoDir, progressFileName, buildProgressEntry(review, selected, timestamp));
+  await appendReviewFile(review.repoDir, proposalsFileName, [
     `# Approved Review Proposals`,
     ``,
     `Approved at: ${timestamp}`,
@@ -315,7 +352,7 @@ async function approveProposals(runId, proposalIds) {
       ``,
     ]),
   ]);
-  await appendReviewFile(review.repoDir, "DAILY_REVIEW_LOG.md", [
+  await appendReviewFile(review.repoDir, reviewLogFileName, [
     `# Ad Hoc Review Log`,
     ``,
     `Run: ${runId}`,
@@ -330,7 +367,7 @@ async function approveProposals(runId, proposalIds) {
     ...selected.map((proposal) => `- ${proposal.title}: ${proposal.summary}`),
   ]);
 
-  const add = await runCommand("git", ["add", "REVIEW_PROPOSALS.md", "DAILY_REVIEW_LOG.md"], { cwd: review.repoDir });
+  const add = await runCommand("git", ["add", progressFileName, proposalsFileName, reviewLogFileName], { cwd: review.repoDir });
   if (add.code !== 0) throw new Error(add.stderr || "git add failed");
   const commit = await runCommand("git", ["commit", "-m", "Apply approved app review proposals"], { cwd: review.repoDir });
   if (commit.code !== 0) throw new Error(commit.stderr || commit.stdout || "git commit failed");

@@ -110,7 +110,7 @@ async function loadReviews() {
   metrics.proposals.textContent = proposals;
   metrics.committed.textContent = committed;
   summaryText.textContent = reviews.length
-    ? "This read-only page lets stakeholders inspect review output and approved changes without running or committing anything."
+    ? "This read-only page lets stakeholders inspect review output and approved changes. Approved target repos receive Markdown audit records with the change progress."
     : "No review runs are available yet. Run one from the operator console, then share this view.";
   viewerList.innerHTML = reviews.length
     ? reviews.map(renderReview).join("")
