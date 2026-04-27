@@ -124,6 +124,8 @@ function renderRecords(container, records, emptyText, mapper) {
 
 function renderComparisons(review) {
   const comparisons = review.comparisons || {};
+  const marketProducts = comparisons.marketProducts || [];
+  const featureGaps = comparisons.featureGaps || [];
   const repos = comparisons.githubRepositories || [];
   const packages = comparisons.npmPackages || [];
   const ideas = comparisons.fallbackFeatureIdeas || [];
@@ -133,7 +135,45 @@ function renderComparisons(review) {
       <p>${escapeHtml((comparisons.searchTerms || []).join(", ") || "No search terms recorded.")}</p>
     </article>
     <article class="record">
-      <h3>GitHub tools/repos compared</h3>
+      <h3>Market/web apps compared</h3>
+      ${
+        marketProducts.length
+          ? `<div class="comparison-list">${marketProducts
+              .map(
+                (product) => `
+                  <a class="comparison-item" href="${escapeHtml(product.url)}" target="_blank" rel="noreferrer">
+                    <strong>${escapeHtml(product.name)}</strong>
+                    <span>${escapeHtml(product.positioning)}</span>
+                    <small>${escapeHtml(product.features.join(", "))}</small>
+                    <small>${product.reachable ? "source reachable" : "source not reachable during scan"}</small>
+                  </a>
+                `,
+              )
+              .join("")}</div>`
+          : `<p>No market/web products were recorded for this run.</p>`
+      }
+    </article>
+    <article class="record">
+      <h3>Feature gap matrix</h3>
+      ${
+        featureGaps.length
+          ? `<div class="comparison-list">${featureGaps
+              .slice(0, 18)
+              .map(
+                (gap) => `
+                  <div class="comparison-item">
+                    <strong>${escapeHtml(gap.feature)}</strong>
+                    <span>${gap.present ? "Detected in this app" : "Not detected in this app"}</span>
+                    <small>Seen in ${escapeHtml(gap.seenIn.join(", "))}</small>
+                  </div>
+                `,
+              )
+              .join("")}</div>`
+          : `<p>No feature matrix was recorded.</p>`
+      }
+    </article>
+    <article class="record">
+      <h3>GitHub repos compared</h3>
       ${
         repos.length
           ? `<div class="comparison-list">${repos

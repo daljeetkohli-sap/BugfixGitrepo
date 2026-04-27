@@ -27,6 +27,8 @@ Each review checks local repository signals plus internet-sourced metadata where
 - GitHub repository metadata such as default branch, open issue count, latest push time, archive status, and license.
 - npm registry freshness for declared dependencies.
 - Comparable-app/product scan using public GitHub repository search and npm package search, with fallback feature generation when public comparison data is weak.
+- Market/web scan against named comparable documentation products, including ERPScribe, Mintlify, GitBook, Stoplight, ReadMe, Document360, and Tango for technical-spec/documentation apps.
+- Feature gap matrix comparing detected app capabilities with features seen in those comparable products.
 - Static bug-risk patterns such as TODO/FIXME markers, hard-coded credential-looking values, `eval`, direct `innerHTML`, and console diagnostics.
 - Project hygiene signals such as README, CI workflow, environment example, lockfile, tests, and deployment contract.
 - Feature proposals for audit visibility and safer deployment operations.

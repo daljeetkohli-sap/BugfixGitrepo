@@ -44,6 +44,8 @@ function renderReview(review) {
   const pushed = review.proposals.filter((proposal) => proposal.status === "pushed");
   const rejected = review.proposals.filter((proposal) => proposal.status === "rejected");
   const comparisons = review.comparisons || {};
+  const marketProducts = comparisons.marketProducts || [];
+  const featureGaps = comparisons.featureGaps || [];
   const repos = comparisons.githubRepositories || [];
   const packages = comparisons.npmPackages || [];
   const proposalItems = review.proposals.length
@@ -95,6 +97,30 @@ function renderReview(review) {
       <section class="viewer-comparisons">
         <h3>Compared tools</h3>
         <p>${escapeHtml(comparisons.category || "No comparison category recorded.")}</p>
+        ${
+          marketProducts.length
+            ? `<ul>${marketProducts
+                .map(
+                  (product) => `
+                    <li>
+                      <strong>${escapeHtml(product.name)}</strong>
+                      <span>${escapeHtml(product.positioning)}</span>
+                      <small>${escapeHtml(product.url)}</small>
+                    </li>
+                  `,
+                )
+                .join("")}</ul>`
+            : "<p>No market/web products were recorded.</p>"
+        }
+        ${
+          featureGaps.length
+            ? `<p>Top missing market features: ${featureGaps
+                .filter((gap) => gap.gap)
+                .slice(0, 5)
+                .map((gap) => escapeHtml(gap.feature))
+                .join(", ")}</p>`
+            : ""
+        }
         ${
           repos.length
             ? `<ul>${repos

@@ -334,6 +334,219 @@ function inferAppProfile(repoUrl, packageJson, readmeText) {
   };
 }
 
+function getMarketProductCatalog(appProfile) {
+  if (appProfile.category.includes("Technical specification") || appProfile.category.includes("documentation")) {
+    return [
+      {
+        name: "ERPScribe",
+        url: "https://erpscribe.com/erpscribe/",
+        positioning: "SAP system documentation generator",
+        features: [
+          "SAP object documentation",
+          "ABAP and DDIC coverage",
+          "transport/configuration documentation",
+          "business-ready summaries",
+          "team/admin tiers",
+        ],
+      },
+      {
+        name: "Mintlify",
+        url: "https://www.mintlify.com/docs/guides/developer-documentation",
+        positioning: "Developer documentation platform",
+        features: [
+          "OpenAPI reference generation",
+          "Git sync",
+          "versioning",
+          "AI assistant",
+          "code explanations",
+          "preview deployments",
+        ],
+      },
+      {
+        name: "GitBook API Docs",
+        url: "https://www.gitbook.com/solutions/api",
+        positioning: "API and knowledge documentation platform",
+        features: [
+          "OpenAPI import",
+          "auto-updating API docs",
+          "Git sync",
+          "API playground",
+          "custom branding",
+          "connected knowledge base",
+        ],
+      },
+      {
+        name: "Stoplight",
+        url: "https://stoplight.io/api-documentation",
+        positioning: "Interactive OpenAPI documentation hub",
+        features: [
+          "interactive docs",
+          "code samples",
+          "markdown guides",
+          "API catalog",
+          "private/public hubs",
+          "search",
+        ],
+      },
+      {
+        name: "ReadMe",
+        url: "https://www.mintlify.com/blog/top-7-api-documentation-tools-of-2025",
+        positioning: "Developer hub and API documentation platform",
+        features: [
+          "API references",
+          "guides",
+          "changelogs",
+          "AI docs assistant",
+          "usage analytics",
+          "audit logs",
+        ],
+      },
+      {
+        name: "Document360",
+        url: "https://www.mintlify.com/library/best-technical-documentation-software-in-2026",
+        positioning: "Knowledge base and documentation platform",
+        features: [
+          "AI search",
+          "chatbot",
+          "article summarization",
+          "workflow",
+          "SEO customization",
+          "internal and external docs",
+        ],
+      },
+      {
+        name: "Tango",
+        url: "https://www.tango.ai/product/create",
+        positioning: "Process documentation with screenshots",
+        features: [
+          "auto screenshots",
+          "annotations",
+          "step-by-step guides",
+          "browser extension capture",
+          "desktop capture",
+        ],
+      },
+    ];
+  }
+
+  return [
+    {
+      name: "GitHub Dependabot",
+      url: "https://docs.github.com/en/code-security/dependabot",
+      positioning: "Dependency and security update automation",
+      features: ["dependency updates", "security alerts", "pull requests", "scheduled checks"],
+    },
+    {
+      name: "Renovate",
+      url: "https://docs.renovatebot.com/",
+      positioning: "Automated dependency update tool",
+      features: ["dependency updates", "pull requests", "grouped updates", "scheduling", "automerge policies"],
+    },
+    {
+      name: "CodeQL",
+      url: "https://codeql.github.com/",
+      positioning: "Semantic code analysis",
+      features: ["security scanning", "query packs", "GitHub integration", "alerts"],
+    },
+  ];
+}
+
+async function verifyMarketProducts(products) {
+  const verified = [];
+  for (const product of products) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3500);
+    try {
+      const response = await fetch(product.url, {
+        signal: controller.signal,
+        headers: { accept: "text/html,application/xhtml+xml", "user-agent": "adhoc-github-reviewer" },
+      });
+      verified.push({ ...product, reachable: response.ok, status: response.status });
+    } catch {
+      verified.push({ ...product, reachable: false, status: null });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  return verified;
+}
+
+function detectTargetCapabilities(files, packageJson, readmeText) {
+  const allText = `${files.join(" ")} ${packageJson ? JSON.stringify(packageJson) : ""} ${readmeText}`.toLowerCase();
+  const has = (patterns) => patterns.some((pattern) => pattern.test(allText));
+  return {
+    "SAP object documentation": has([/sap/, /abap/, /ddic/, /transport/, /fiori/]),
+    "ABAP and DDIC coverage": has([/abap/, /ddic/, /dictionary/]),
+    "transport/configuration documentation": has([/transport/, /configuration/, /spro/, /img/]),
+    "business-ready summaries": has([/business summary/, /executive summary/, /stakeholder/]),
+    "OpenAPI reference generation": has([/openapi/, /swagger/]),
+    "Git sync": has([/git sync/, /github/, /\.github/]),
+    versioning: has([/version/, /changelog/, /release/]),
+    "AI assistant": has([/assistant/, /chat/, /ai/]),
+    "code explanations": has([/code snippet/, /code explanation/, /snippet/]),
+    "preview deployments": has([/preview/, /pages/, /deploy/]),
+    "OpenAPI import": has([/openapi/, /swagger/, /postman/]),
+    "auto-updating API docs": has([/auto.*doc/, /sync/, /generated/]),
+    "API playground": has([/playground/, /try it/, /endpoint test/]),
+    "custom branding": has([/brand/, /theme/, /logo/]),
+    "connected knowledge base": has([/knowledge base/, /wiki/, /portal/]),
+    "interactive docs": has([/interactive/, /playground/, /try it/]),
+    "code samples": has([/code sample/, /snippet/, /curl/, /python/]),
+    "markdown guides": has([/markdown/, /\.md/, /mdx/]),
+    "API catalog": has([/api catalog/, /catalog/]),
+    "private/public hubs": has([/private/, /public/, /role/]),
+    search: has([/search/, /filter/]),
+    "API references": has([/api reference/, /endpoint/, /openapi/]),
+    guides: has([/guide/, /how-to/, /walkthrough/]),
+    changelogs: has([/changelog/, /release note/]),
+    "AI docs assistant": has([/assistant/, /chatbot/, /ai/]),
+    "usage analytics": has([/analytics/, /usage/, /telemetry/]),
+    "audit logs": has([/audit/, /log/, /history/]),
+    "AI search": has([/ai search/, /semantic search/, /search/]),
+    chatbot: has([/chatbot/, /assistant/]),
+    "article summarization": has([/summary/, /summarize/]),
+    workflow: has([/workflow/, /approval/, /review/]),
+    "SEO customization": has([/seo/, /metadata/]),
+    "internal and external docs": has([/internal/, /external/, /public/]),
+    "auto screenshots": has([/screenshot/, /tesseract/, /ocr/, /image/]),
+    annotations: has([/annotation/, /markup/, /highlight/]),
+    "step-by-step guides": has([/step/, /walkthrough/, /guide/]),
+    "browser extension capture": has([/extension/]),
+    "desktop capture": has([/desktop/]),
+  };
+}
+
+function compareMarketFeatures(products, capabilities) {
+  const featureMap = new Map();
+  for (const product of products) {
+    for (const feature of product.features) {
+      const entry = featureMap.get(feature) || { feature, seenIn: [], present: Boolean(capabilities[feature]) };
+      entry.seenIn.push(product.name);
+      featureMap.set(feature, entry);
+    }
+  }
+  return [...featureMap.values()]
+    .map((entry) => ({ ...entry, gap: !entry.present }))
+    .sort((a, b) => Number(b.gap) - Number(a.gap) || b.seenIn.length - a.seenIn.length);
+}
+
+function marketGapToProposal(gap) {
+  const slug = gap.feature.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return {
+    id: `market-gap-${slug}`,
+    title: `Add ${gap.feature}`,
+    category: "feature",
+    risk: gap.seenIn.length > 2 ? "medium" : "low",
+    status: "pending",
+    summary: `${gap.feature} appears in comparable tools (${gap.seenIn.join(", ")}) but was not detected in this app. Add it if it fits the product direction.`,
+    action: {
+      type: "append-review-doc",
+      heading: `Market feature gap: ${gap.feature}`,
+      body: `Comparable tools with this feature: ${gap.seenIn.join(", ")}. Suggested implementation: add a scoped MVP for ${gap.feature}, include acceptance criteria, and expose it in the app workflow after approval.`,
+    },
+  };
+}
+
 async function fetchGitHubComparableRepos(searchTerms, currentRepoUrl) {
   const current = parseGitHubRepo(currentRepoUrl);
   const results = [];
@@ -458,6 +671,9 @@ async function buildReview(runId, repoUrl, repoDir) {
   const readmeFile = files.find((file) => /^readme\.md$/i.test(file));
   const readmeText = readmeFile ? await readOptionalText(path.join(repoDir, readmeFile)) : "";
   const appProfile = inferAppProfile(repoUrl, packageJson, readmeText);
+  const marketProducts = await verifyMarketProducts(getMarketProductCatalog(appProfile));
+  const targetCapabilities = detectTargetCapabilities(files, packageJson, readmeText);
+  const marketFeatureGaps = compareMarketFeatures(marketProducts, targetCapabilities);
   const githubMetadata = await fetchGitHubRepoMetadata(repoUrl);
   if (githubMetadata) {
     addLog(
@@ -471,6 +687,13 @@ async function buildReview(runId, repoUrl, repoDir) {
 
   const comparableRepos = await fetchGitHubComparableRepos(appProfile.searchTerms, repoUrl);
   const comparablePackages = await fetchNpmComparablePackages(appProfile.searchTerms);
+  addLog(
+    "success",
+    `Market/web scan: ${appProfile.category}`,
+    marketProducts
+      .map((product) => `${product.name}${product.reachable ? "" : " (not reachable)"}`)
+      .join("; "),
+  );
   if (comparableRepos.length) {
     addLog(
       "success",
@@ -541,6 +764,10 @@ async function buildReview(runId, repoUrl, repoDir) {
       ].join(" "),
     },
   });
+
+  for (const gap of marketFeatureGaps.filter((gap) => gap.gap).slice(0, 8)) {
+    proposals.push(marketGapToProposal(gap));
+  }
 
   for (const idea of appProfile.featureIdeas) {
     proposals.push({
@@ -725,6 +952,8 @@ async function buildReview(runId, repoUrl, repoDir) {
     comparisons: {
       category: appProfile.category,
       searchTerms: appProfile.searchTerms,
+      marketProducts,
+      featureGaps: marketFeatureGaps,
       githubRepositories: comparableRepos,
       npmPackages: comparablePackages,
       fallbackFeatureIdeas: appProfile.featureIdeas,
@@ -769,6 +998,8 @@ async function startReview(repoUrl) {
     comparisons: {
       category: "Queued",
       searchTerms: [],
+      marketProducts: [],
+      featureGaps: [],
       githubRepositories: [],
       npmPackages: [],
       fallbackFeatureIdeas: [],
