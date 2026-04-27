@@ -228,7 +228,11 @@ approveButton.addEventListener("click", async () => {
     });
     reviews = reviews.map((item) => (item.id === review.id ? review : item));
     renderReview(review);
-    showToast(review.lastApproval?.pushed ? "Approved proposals pushed to the target repo." : "Commit created, but push failed. Check fixes/logs.");
+    showToast(
+      review.lastApproval?.pushed
+        ? `Approved proposals pushed to ${review.lastApproval.pushBranch || "the target repo"}.`
+        : "Commit created, but push failed. Check fixes/logs.",
+    );
   } catch (error) {
     showToast(error.message);
   } finally {

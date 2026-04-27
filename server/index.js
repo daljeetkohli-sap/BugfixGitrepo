@@ -597,6 +597,52 @@ function buildProgressEntry(review, selected, timestamp) {
   return lines;
 }
 
+async function pushApprovedCommit(repoDir, branchName, runId) {
+  const firstPush = await runCommand("git", ["push", "origin", `HEAD:${branchName}`], { cwd: repoDir });
+  if (firstPush.code === 0) {
+    return { pushed: true, mode: "direct", branchName, output: firstPush.stdout || firstPush.stderr };
+  }
+
+  const shouldSync = /fetch first|non-fast-forward|failed to push some refs/i.test(firstPush.stderr || firstPush.stdout);
+  if (shouldSync) {
+    const fetch = await runCommand("git", ["fetch", "origin", branchName], { cwd: repoDir });
+    const rebase = fetch.code === 0
+      ? await runCommand("git", ["rebase", `origin/${branchName}`], { cwd: repoDir })
+      : fetch;
+    if (fetch.code === 0 && rebase.code === 0) {
+      const retryPush = await runCommand("git", ["push", "origin", `HEAD:${branchName}`], { cwd: repoDir });
+      if (retryPush.code === 0) {
+        return {
+          pushed: true,
+          mode: "rebased",
+          branchName,
+          output: retryPush.stdout || retryPush.stderr,
+        };
+      }
+    }
+  }
+
+  const reviewBranch = `app-review/${runId}`;
+  const branchPush = await runCommand("git", ["push", "origin", `HEAD:${reviewBranch}`], { cwd: repoDir });
+  if (branchPush.code === 0) {
+    return {
+      pushed: true,
+      mode: "review-branch",
+      branchName: reviewBranch,
+      output: branchPush.stdout || branchPush.stderr,
+      firstPushError: firstPush.stderr || firstPush.stdout,
+    };
+  }
+
+  return {
+    pushed: false,
+    mode: "failed",
+    branchName,
+    output: branchPush.stderr || branchPush.stdout || firstPush.stderr || firstPush.stdout,
+    firstPushError: firstPush.stderr || firstPush.stdout,
+  };
+}
+
 async function approveProposals(runId, proposalIds) {
   const state = await readState();
   const review = state[runId];
@@ -648,26 +694,28 @@ async function approveProposals(runId, proposalIds) {
   if (commit.code !== 0) throw new Error(commit.stderr || commit.stdout || "git commit failed");
   const branch = await runCommand("git", ["branch", "--show-current"], { cwd: review.repoDir });
   const branchName = branch.stdout || "main";
-  const push = await runCommand("git", ["push", "origin", `HEAD:${branchName}`], { cwd: review.repoDir });
-  const pushed = push.code === 0;
+  const pushResult = await pushApprovedCommit(review.repoDir, branchName, runId);
 
   review.proposals = review.proposals.map((proposal) =>
-    proposalIds.includes(proposal.id) ? { ...proposal, status: pushed ? "pushed" : "push_failed" } : proposal,
+    proposalIds.includes(proposal.id) ? { ...proposal, status: pushResult.pushed ? "pushed" : "push_failed" } : proposal,
   );
   review.lastApproval = {
     at: timestamp,
     proposalIds,
     commit: commit.stdout || commit.stderr,
-    pushed,
-    push: push.stdout || push.stderr,
+    pushed: pushResult.pushed,
+    pushMode: pushResult.mode,
+    pushBranch: pushResult.branchName,
+    push: pushResult.output,
+    firstPushError: pushResult.firstPushError,
   };
   review.fixes = [
     ...review.fixes,
     {
-      status: pushed ? "pushed" : "push-failed",
-      message: pushed
-        ? `Approved proposal records were committed and pushed to ${branchName}.`
-        : `Approved proposal records were committed locally, but push failed: ${push.stderr || push.stdout}`,
+      status: pushResult.pushed ? "pushed" : "push-failed",
+      message: pushResult.pushed
+        ? `Approved proposal records were committed and pushed to ${pushResult.branchName} (${pushResult.mode}).`
+        : `Approved proposal records were committed locally, but push failed: ${pushResult.output}`,
     },
   ];
   state[runId] = review;
