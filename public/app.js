@@ -4,6 +4,15 @@ const runButton = document.querySelector("#run-button");
 const refreshButton = document.querySelector("#refresh-button");
 const approveButton = document.querySelector("#approve-button");
 const rejectButton = document.querySelector("#reject-button");
+const proposalToolbar = document.querySelector("#proposal-toolbar");
+const proposalSearch = document.querySelector("#proposal-search");
+const proposalCategory = document.querySelector("#proposal-category");
+const proposalRisk = document.querySelector("#proposal-risk");
+const proposalStatus = document.querySelector("#proposal-status");
+const proposalFilterSummary = document.querySelector("#proposal-filter-summary");
+const selectVisibleButton = document.querySelector("#select-visible-button");
+const clearSelectionButton = document.querySelector("#clear-selection-button");
+const rejectVisibleButton = document.querySelector("#reject-visible-button");
 const historyList = document.querySelector("#history-list");
 const emptyState = document.querySelector("#empty-state");
 const reviewContent = document.querySelector("#review-content");
@@ -25,6 +34,13 @@ const metrics = {
 
 let reviews = [];
 let selectedReview = null;
+let activeTab = "proposals";
+const proposalFilters = {
+  search: "",
+  category: "all",
+  risk: "all",
+  status: "all",
+};
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -97,12 +113,57 @@ function proposalById(review, proposalId) {
   return (review.proposals || []).find((proposal) => proposal.id === proposalId);
 }
 
+function optionList(values, selected, allLabel, allValue = "all") {
+  const unique = [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  return [
+    `<option value="${escapeHtml(allValue)}">${escapeHtml(allLabel)}</option>`,
+    ...unique.map((value) => `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(value)}</option>`),
+  ].join("");
+}
+
+function proposalMatchesFilters(proposal) {
+  const haystack = [proposal.title, proposal.summary, proposal.category, proposal.risk, proposal.status, proposal.action?.body]
+    .join(" ")
+    .toLowerCase();
+  const matchesSearch = !proposalFilters.search || haystack.includes(proposalFilters.search.toLowerCase());
+  const matchesCategory = proposalFilters.category === "all" || proposal.category === proposalFilters.category;
+  const matchesRisk = proposalFilters.risk === "all" || proposal.risk === proposalFilters.risk;
+  const matchesStatus =
+    proposalFilters.status === "all" ||
+    (proposalFilters.status === "open" ? !isClosedProposal(proposal) : proposal.status === proposalFilters.status);
+  return matchesSearch && matchesCategory && matchesRisk && matchesStatus;
+}
+
+function visibleProposalIds() {
+  return [...panels.proposals.querySelectorAll("input[type='checkbox']:not(:disabled)")].map((input) => input.value);
+}
+
+function renderProposalToolbar(review, visibleProposals) {
+  const proposals = review.proposals || [];
+  proposalToolbar.classList.toggle("hidden", activeTab !== "proposals" || !proposals.length);
+  proposalCategory.innerHTML = optionList(proposals.map((proposal) => proposal.category), proposalFilters.category, "All categories");
+  proposalRisk.innerHTML = optionList(proposals.map((proposal) => proposal.risk), proposalFilters.risk, "All risks");
+  proposalStatus.innerHTML = optionList(proposals.map((proposal) => proposal.status), proposalFilters.status, "All statuses");
+  proposalStatus.insertAdjacentHTML("afterbegin", `<option value="open" ${proposalFilters.status === "open" ? "selected" : ""}>Open proposals</option>`);
+  proposalSearch.value = proposalFilters.search;
+
+  const actionable = visibleProposals.filter((proposal) => !isClosedProposal(proposal));
+  const selected = selectedProposalIds().length;
+  proposalFilterSummary.textContent = `${visibleProposals.length} visible / ${selected} selected`;
+  selectVisibleButton.disabled = !actionable.length;
+  rejectVisibleButton.disabled = selectedReview?.status !== "completed" || !actionable.length;
+  clearSelectionButton.disabled = !selected;
+}
+
 function renderProposals(review) {
+  const visibleProposals = (review.proposals || []).filter(proposalMatchesFilters);
+  renderProposalToolbar(review, visibleProposals);
   panels.proposals.innerHTML = review.proposals.length
-    ? review.proposals
+    ? visibleProposals.length
+      ? visibleProposals
         .map(
           (proposal) => `
-            <article class="proposal">
+            <article class="proposal ${proposal.risk === "medium" ? "is-medium-risk" : ""}">
               <input type="checkbox" value="${escapeHtml(proposal.id)}" ${isClosedProposal(proposal) ? "disabled" : ""} aria-label="Select ${escapeHtml(proposal.title)}" />
               <div>
                 <h3>${escapeHtml(proposal.title)}</h3>
@@ -124,6 +185,7 @@ function renderProposals(review) {
           `,
         )
         .join("")
+      : `<div class="record"><p>No proposals match the current filters.</p></div>`
     : `<div class="record"><p>${escapeHtml(["queued", "running"].includes(review.status) ? "Background review is still running." : "No proposals were generated for this run.")}</p></div>`;
 }
 
@@ -299,6 +361,11 @@ function syncDecisionButtons() {
   const canDecide = selectedReview?.status === "completed";
   approveButton.disabled = !selected || !selectedReview || !canDecide;
   rejectButton.disabled = !selected || !selectedReview || !canDecide;
+  if (selectedReview?.proposals?.length) {
+    const visibleCount = panels.proposals.querySelectorAll(".proposal").length;
+    proposalFilterSummary.textContent = `${visibleCount} visible / ${selected} selected`;
+    clearSelectionButton.disabled = !selected;
+  }
 }
 
 async function loadReviews() {
@@ -347,10 +414,12 @@ historyList.addEventListener("click", (event) => {
 });
 
 function activateTab(tabName) {
+  activeTab = tabName;
   const tab = document.querySelector(`[data-tab="${tabName}"]`);
   if (!tab) return;
   document.querySelectorAll(".tab").forEach((button) => button.classList.toggle("active", button === tab));
   Object.entries(panels).forEach(([name, panel]) => panel.classList.toggle("hidden", name !== tabName));
+  proposalToolbar.classList.toggle("hidden", tabName !== "proposals" || !selectedReview?.proposals?.length);
 }
 
 document.querySelector(".tabs").addEventListener("click", (event) => {
@@ -372,6 +441,59 @@ panels.comparisons.addEventListener("click", (event) => {
 });
 
 panels.proposals.addEventListener("change", syncDecisionButtons);
+
+proposalSearch.addEventListener("input", () => {
+  proposalFilters.search = proposalSearch.value.trim();
+  if (selectedReview) renderProposals(selectedReview);
+});
+
+proposalCategory.addEventListener("change", () => {
+  proposalFilters.category = proposalCategory.value;
+  if (selectedReview) renderProposals(selectedReview);
+});
+
+proposalRisk.addEventListener("change", () => {
+  proposalFilters.risk = proposalRisk.value;
+  if (selectedReview) renderProposals(selectedReview);
+});
+
+proposalStatus.addEventListener("change", () => {
+  proposalFilters.status = proposalStatus.value;
+  if (selectedReview) renderProposals(selectedReview);
+});
+
+selectVisibleButton.addEventListener("click", () => {
+  panels.proposals.querySelectorAll("input[type='checkbox']:not(:disabled)").forEach((input) => {
+    input.checked = true;
+  });
+  syncDecisionButtons();
+});
+
+clearSelectionButton.addEventListener("click", () => {
+  panels.proposals.querySelectorAll("input[type='checkbox']").forEach((input) => {
+    input.checked = false;
+  });
+  syncDecisionButtons();
+});
+
+rejectVisibleButton.addEventListener("click", async () => {
+  const proposalIds = visibleProposalIds();
+  if (!proposalIds.length || !selectedReview) return;
+  rejectVisibleButton.disabled = true;
+  try {
+    const review = await api(`/api/reviews/${selectedReview.id}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ proposalIds, reason: "Bulk rejected from proposal filters." }),
+    });
+    reviews = reviews.map((item) => (item.id === review.id ? review : item));
+    renderReview(review);
+    showToast("Visible proposals rejected.");
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    syncDecisionButtons();
+  }
+});
 
 approveButton.addEventListener("click", async () => {
   const proposalIds = selectedProposalIds();

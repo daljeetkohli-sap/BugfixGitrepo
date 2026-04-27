@@ -94,6 +94,40 @@
               </div>
             </div>
 
+            <section id="proposal-toolbar" class="proposal-toolbar hidden" aria-label="Proposal controls">
+              <div class="proposal-filter-grid">
+                <label>
+                  Search
+                  <input id="proposal-search" type="search" placeholder="Find proposal text" autocomplete="off" />
+                </label>
+                <label>
+                  Category
+                  <select id="proposal-category">
+                    <option value="all">All categories</option>
+                  </select>
+                </label>
+                <label>
+                  Risk
+                  <select id="proposal-risk">
+                    <option value="all">All risks</option>
+                  </select>
+                </label>
+                <label>
+                  Status
+                  <select id="proposal-status">
+                    <option value="open">Open proposals</option>
+                    <option value="all">All statuses</option>
+                  </select>
+                </label>
+              </div>
+              <div class="proposal-bulk-actions">
+                <span id="proposal-filter-summary" class="selection-summary">0 visible</span>
+                <button id="select-visible-button" class="secondary-button" type="button">Select visible</button>
+                <button id="clear-selection-button" class="secondary-button" type="button">Clear</button>
+                <button id="reject-visible-button" class="reject-button compact" type="button">Reject all visible</button>
+              </div>
+            </section>
+
             <div id="tab-proposals" class="tab-panel"></div>
             <div id="tab-comparisons" class="tab-panel hidden"></div>
             <div id="tab-errors" class="tab-panel hidden"></div>

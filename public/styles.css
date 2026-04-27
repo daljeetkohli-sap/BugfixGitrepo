@@ -5,8 +5,10 @@
   --line: #d8dee8;
   --soft: #f5f7fa;
   --panel: #ffffff;
+  --panel-strong: #f8fafc;
   --accent: #0f766e;
   --accent-dark: #115e59;
+  --focus: #4f46e5;
   --warn: #b45309;
   --danger: #b42318;
   --success: #16803c;
@@ -23,12 +25,15 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: #edf1f5;
+  background:
+    linear-gradient(180deg, #e8eef5 0, #f7f8fb 280px),
+    #f7f8fb;
   color: var(--ink);
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -50,10 +55,11 @@ input {
   gap: 28px;
   align-items: end;
   padding: 28px;
-  background: var(--panel);
+  background: #ffffff;
   border: 1px solid var(--line);
   border-radius: 8px;
   box-shadow: var(--shadow);
+  border-top: 5px solid var(--accent);
 }
 
 .eyebrow {
@@ -106,7 +112,18 @@ input {
   color: var(--ink);
 }
 
-input:focus {
+select {
+  min-width: 0;
+  height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 34px 0 12px;
+  background: #fff;
+  color: var(--ink);
+}
+
+input:focus,
+select:focus {
   border-color: var(--accent);
   outline: 3px solid rgba(15, 118, 110, 0.18);
 }
@@ -205,7 +222,8 @@ button:disabled {
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--panel);
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
 }
 
 .metric-label {
@@ -236,7 +254,8 @@ button:disabled {
   min-height: 560px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--panel);
+  background: #ffffff;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.06);
 }
 
 .panel-header,
@@ -297,6 +316,7 @@ button:disabled {
   gap: 4px;
   padding: 12px;
   border-bottom: 1px solid var(--line);
+  background: #f8fafc;
 }
 
 .tab {
@@ -307,8 +327,8 @@ button:disabled {
 }
 
 .tab.active {
-  background: var(--soft);
-  color: var(--ink);
+  background: #17202a;
+  color: #fff;
 }
 
 .empty-state {
@@ -329,6 +349,56 @@ button:disabled {
   padding: 22px;
 }
 
+.proposal-toolbar {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.proposal-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.proposal-filter-grid label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.proposal-filter-grid input,
+.proposal-filter-grid select {
+  height: 40px;
+  text-transform: none;
+}
+
+.proposal-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.selection-summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: #17202a;
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
 .hidden {
   display: none !important;
 }
@@ -343,7 +413,7 @@ button:disabled {
 .record {
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fbfcfe;
+  background: #ffffff;
   padding: 16px;
 }
 
@@ -352,12 +422,19 @@ button:disabled {
   grid-template-columns: auto 1fr auto;
   gap: 14px;
   align-items: start;
+  border-left: 5px solid var(--accent);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+}
+
+.proposal.is-medium-risk {
+  border-left-color: var(--warn);
 }
 
 .proposal input {
   width: 20px;
   height: 20px;
   margin-top: 3px;
+  accent-color: var(--accent);
 }
 
 .proposal h3,
@@ -371,6 +448,11 @@ button:disabled {
   margin-bottom: 0;
   color: var(--muted);
   line-height: 1.45;
+}
+
+.compact {
+  min-height: 38px;
+  padding: 0 14px;
 }
 
 .proposal .decision-note {
@@ -602,6 +684,20 @@ button:disabled {
 
   .decision-actions {
     justify-content: stretch;
+  }
+
+  .proposal-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .proposal-bulk-actions .secondary-button,
+  .proposal-bulk-actions .reject-button {
+    width: 100%;
+  }
+
+  .selection-summary {
+    width: 100%;
+    justify-content: center;
   }
 
   .review-title-row {
