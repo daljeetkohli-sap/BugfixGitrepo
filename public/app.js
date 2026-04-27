@@ -86,6 +86,17 @@ function isClosedProposal(proposal) {
   return ["pushed", "rejected", "committed"].includes(proposal.status);
 }
 
+function marketGapProposalId(feature) {
+  return `market-gap-${String(feature || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")}`;
+}
+
+function proposalById(review, proposalId) {
+  return (review.proposals || []).find((proposal) => proposal.id === proposalId);
+}
+
 function renderProposals(review) {
   panels.proposals.innerHTML = review.proposals.length
     ? review.proposals
@@ -129,10 +140,16 @@ function renderComparisons(review) {
   const repos = comparisons.githubRepositories || [];
   const packages = comparisons.npmPackages || [];
   const ideas = comparisons.fallbackFeatureIdeas || [];
+  const missingGaps = featureGaps.filter((gap) => gap.gap);
   panels.comparisons.innerHTML = `
     <article class="record comparison-summary">
       <h3>${escapeHtml(comparisons.category || "No category inferred")}</h3>
       <p>${escapeHtml((comparisons.searchTerms || []).join(", ") || "No search terms recorded.")}</p>
+      <div class="meta-row">
+        <span class="badge">${escapeHtml(marketProducts.length)} tools compared</span>
+        <span class="badge ${missingGaps.length ? "warn" : "success"}">${escapeHtml(missingGaps.length)} missing feature gaps</span>
+      </div>
+      <p class="comparison-note">Missing market features are converted into approval proposals. Select a gap here, then approve and push to update the target repository.</p>
     </article>
     <article class="record">
       <h3>Market/web apps compared</h3>
@@ -162,9 +179,24 @@ function renderComparisons(review) {
               .map(
                 (gap) => `
                   <div class="comparison-item">
-                    <strong>${escapeHtml(gap.feature)}</strong>
+                    <div class="comparison-item-header">
+                      <strong>${escapeHtml(gap.feature)}</strong>
+                      <span class="badge ${gap.present ? "success" : "warn"}">${gap.present ? "implemented" : "missing"}</span>
+                    </div>
                     <span>${gap.present ? "Detected in this app" : "Not detected in this app"}</span>
                     <small>Seen in ${escapeHtml(gap.seenIn.join(", "))}</small>
+                    ${
+                      gap.gap
+                        ? (() => {
+                            const proposalId = marketGapProposalId(gap.feature);
+                            const proposal = proposalById(review, proposalId);
+                            const disabled = !proposal || isClosedProposal(proposal);
+                            return `<button class="secondary-button comparison-select" data-select-proposal="${escapeHtml(proposalId)}" type="button" ${disabled ? "disabled" : ""}>
+                              ${proposal ? `Select proposal (${escapeHtml(proposal.status)})` : "Proposal not available"}
+                            </button>`;
+                          })()
+                        : ""
+                    }
                   </div>
                 `,
               )
@@ -314,11 +346,29 @@ historyList.addEventListener("click", (event) => {
   if (review) renderReview(review);
 });
 
+function activateTab(tabName) {
+  const tab = document.querySelector(`[data-tab="${tabName}"]`);
+  if (!tab) return;
+  document.querySelectorAll(".tab").forEach((button) => button.classList.toggle("active", button === tab));
+  Object.entries(panels).forEach(([name, panel]) => panel.classList.toggle("hidden", name !== tabName));
+}
+
 document.querySelector(".tabs").addEventListener("click", (event) => {
   const tab = event.target.closest("[data-tab]");
   if (!tab) return;
-  document.querySelectorAll(".tab").forEach((button) => button.classList.toggle("active", button === tab));
-  Object.entries(panels).forEach(([name, panel]) => panel.classList.toggle("hidden", name !== tab.dataset.tab));
+  activateTab(tab.dataset.tab);
+});
+
+panels.comparisons.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-select-proposal]");
+  if (!button || !selectedReview) return;
+  const checkbox = panels.proposals.querySelector(`input[value="${CSS.escape(button.dataset.selectProposal)}"]`);
+  if (!checkbox || checkbox.disabled) return;
+  checkbox.checked = true;
+  activateTab("proposals");
+  checkbox.closest(".proposal")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  syncDecisionButtons();
+  showToast("Comparison gap selected. Approve and push when ready.");
 });
 
 panels.proposals.addEventListener("change", syncDecisionButtons);

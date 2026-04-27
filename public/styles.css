@@ -516,14 +516,45 @@ button:disabled {
   text-decoration: none;
 }
 
+.comparison-item-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .comparison-item span,
 .comparison-item small {
   color: var(--muted);
 }
 
+.comparison-item .badge {
+  color: var(--accent-dark);
+}
+
+.comparison-item .badge.warn {
+  color: var(--warn);
+}
+
+.comparison-item .badge.success {
+  color: var(--success);
+}
+
 .comparison-item small {
   font-size: 0.82rem;
   font-weight: 700;
+}
+
+.comparison-note {
+  margin-top: 10px;
+}
+
+.comparison-select {
+  justify-self: start;
+  margin-top: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 0.82rem;
 }
 
 .viewer-card li small,
