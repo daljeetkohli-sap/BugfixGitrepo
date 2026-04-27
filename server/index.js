@@ -1151,6 +1151,42 @@ function describeEndUserValue(title, summary = "") {
   return "Users get a visible, reviewed improvement that is tracked in the app and repository change records.";
 }
 
+function describeFeatureAccess(title, summary = "") {
+  const text = `${title} ${summary}`.toLowerCase();
+  if (text.includes("business-ready summar")) {
+    return { status: "Available now", location: "Generated Implementation Summary and downloaded DOCX/Markdown output." };
+  }
+  if (text.includes("template")) {
+    return { status: "Available now", location: "SAP area selector, template mode, and generated section outline." };
+  }
+  if (text.includes("evidence") || text.includes("traceability")) {
+    return { status: "Available now", location: "Screenshots, code snippets, evidence notes, and generated evidence sections." };
+  }
+  if (text.includes("export")) {
+    return { status: "Available now", location: "Export/download actions for generated technical documentation." };
+  }
+  if (text.includes("reviewer workflow") || text.includes("approval")) {
+    return { status: "Partly available", location: "Review notes and generated audit content; full multi-user workflow is still a roadmap item." };
+  }
+  if (text.includes("audit") || text.includes("history")) {
+    return { status: "Available now", location: "Market-Driven Enhancements panel plus APP_REVIEW_PROGRESS.md, REVIEW_PROPOSALS.md, and DAILY_REVIEW_LOG.md." };
+  }
+  if (text.includes("bug") || text.includes("risk")) {
+    return { status: "Available now", location: "Repository review log and approved fix records created by the GitHub App Reviewer." };
+  }
+  if (
+    text.includes("openapi") ||
+    text.includes("api playground") ||
+    text.includes("api catalog") ||
+    text.includes("team/admin") ||
+    text.includes("interactive docs") ||
+    text.includes("knowledge base")
+  ) {
+    return { status: "Approved next-step", location: "Not a standalone end-user workflow yet; tracked here and in repo audit files for implementation." };
+  }
+  return { status: "Tracked", location: "Visible in this reviewed enhancements panel and repository audit files." };
+}
+
 function buildEnhancementComponent(review, selected, timestamp) {
   const features = selected
     .filter((proposal) => ["feature", "market", "bugfix"].includes(proposal.category))
@@ -1160,6 +1196,7 @@ function buildEnhancementComponent(review, selected, timestamp) {
       risk: proposal.risk,
       summary: proposal.summary,
       endUserValue: describeEndUserValue(proposal.title, proposal.summary),
+      access: describeFeatureAccess(proposal.title, proposal.summary),
     }));
   const comparisons = review.comparisons || {};
   const products = (comparisons.marketProducts || []).map((product) => ({
@@ -1213,6 +1250,7 @@ export default function AppReviewEnhancements() {
             <article key={feature.title} className="app-review-outcome-card">
               <strong>{feature.title.replace(/^Add\s+/i, '')}</strong>
               <span>{feature.endUserValue}</span>
+              <small><b>{feature.access.status}:</b> {feature.access.location}</small>
             </article>
           ))}
         </div>
@@ -1322,8 +1360,14 @@ async function applyReactVisibleEnhancement(review, selected, timestamp) {
 .app-review-enhancements__header p,
 .app-review-enhancement-card p,
 .app-review-outcome-card span,
+.app-review-outcome-card small,
 .app-review-market-grid span {
   color: #475569;
+}
+
+.app-review-outcome-card small {
+  font-weight: 700;
+  line-height: 1.45;
 }
 
 .app-review-eyebrow,
