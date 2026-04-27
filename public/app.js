@@ -82,7 +82,7 @@ function renderHistory() {
 }
 
 function isClosedProposal(proposal) {
-  return ["pushed", "push_failed", "rejected", "committed"].includes(proposal.status);
+  return ["pushed", "rejected", "committed"].includes(proposal.status);
 }
 
 function renderProposals(review) {

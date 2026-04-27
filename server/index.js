@@ -652,46 +652,51 @@ async function approveProposals(runId, proposalIds) {
   if (!selected.length) throw new Error("Select at least one proposal to approve.");
 
   const timestamp = new Date().toISOString();
-  await appendReviewFile(review.repoDir, progressFileName, buildProgressEntry(review, selected, timestamp));
-  await appendReviewFile(review.repoDir, proposalsFileName, [
-    `# Approved Review Proposals`,
-    ``,
-    `Approved at: ${timestamp}`,
-    `Source repo: ${review.repoUrl}`,
-    ``,
-    ...selected.flatMap((proposal) => [
-      `## ${proposal.title}`,
+  const retryingPush = selected.every((proposal) => proposal.status === "push_failed") && review.lastApproval?.pushed === false;
+  let commitOutput = review.lastApproval?.commit || "";
+  if (!retryingPush) {
+    await appendReviewFile(review.repoDir, progressFileName, buildProgressEntry(review, selected, timestamp));
+    await appendReviewFile(review.repoDir, proposalsFileName, [
+      `# Approved Review Proposals`,
       ``,
-      `Category: ${proposal.category}`,
-      `Risk: ${proposal.risk}`,
+      `Approved at: ${timestamp}`,
+      `Source repo: ${review.repoUrl}`,
       ``,
-      proposal.summary,
+      ...selected.flatMap((proposal) => [
+        `## ${proposal.title}`,
+        ``,
+        `Category: ${proposal.category}`,
+        `Risk: ${proposal.risk}`,
+        ``,
+        proposal.summary,
+        ``,
+        proposal.action?.body || "",
+        ``,
+      ]),
+    ]);
+    await appendReviewFile(review.repoDir, reviewLogFileName, [
+      `# Ad Hoc Review Log`,
       ``,
-      proposal.action?.body || "",
+      `Run: ${runId}`,
+      `Approved at: ${timestamp}`,
       ``,
-    ]),
-  ]);
-  await appendReviewFile(review.repoDir, reviewLogFileName, [
-    `# Ad Hoc Review Log`,
-    ``,
-    `Run: ${runId}`,
-    `Approved at: ${timestamp}`,
-    ``,
-    `## Errors`,
-    ``,
-    ...(review.errors.length ? review.errors.map((error) => `- [${error.severity}] ${error.area}: ${error.message}`) : ["- No command errors captured."]),
-    ``,
-    `## Approved Fixes`,
-    ``,
-    ...selected.map((proposal) => `- ${proposal.title}: ${proposal.summary}`),
-  ]);
+      `## Errors`,
+      ``,
+      ...(review.errors.length ? review.errors.map((error) => `- [${error.severity}] ${error.area}: ${error.message}`) : ["- No command errors captured."]),
+      ``,
+      `## Approved Fixes`,
+      ``,
+      ...selected.map((proposal) => `- ${proposal.title}: ${proposal.summary}`),
+    ]);
 
-  const add = await runCommand("git", ["add", progressFileName, proposalsFileName, reviewLogFileName], { cwd: review.repoDir });
-  if (add.code !== 0) throw new Error(add.stderr || "git add failed");
-  await runCommand("git", ["config", "user.name", "Ad Hoc GitHub Reviewer"], { cwd: review.repoDir });
-  await runCommand("git", ["config", "user.email", "reviewer-bot@users.noreply.github.com"], { cwd: review.repoDir });
-  const commit = await runCommand("git", ["commit", "-m", "Apply approved app review proposals"], { cwd: review.repoDir });
-  if (commit.code !== 0) throw new Error(commit.stderr || commit.stdout || "git commit failed");
+    const add = await runCommand("git", ["add", progressFileName, proposalsFileName, reviewLogFileName], { cwd: review.repoDir });
+    if (add.code !== 0) throw new Error(add.stderr || "git add failed");
+    await runCommand("git", ["config", "user.name", "Ad Hoc GitHub Reviewer"], { cwd: review.repoDir });
+    await runCommand("git", ["config", "user.email", "reviewer-bot@users.noreply.github.com"], { cwd: review.repoDir });
+    const commit = await runCommand("git", ["commit", "-m", "Apply approved app review proposals"], { cwd: review.repoDir });
+    if (commit.code !== 0) throw new Error(commit.stderr || commit.stdout || "git commit failed");
+    commitOutput = commit.stdout || commit.stderr;
+  }
   const branch = await runCommand("git", ["branch", "--show-current"], { cwd: review.repoDir });
   const branchName = branch.stdout || "main";
   const pushResult = await pushApprovedCommit(review.repoDir, branchName, runId);
@@ -702,7 +707,8 @@ async function approveProposals(runId, proposalIds) {
   review.lastApproval = {
     at: timestamp,
     proposalIds,
-    commit: commit.stdout || commit.stderr,
+    commit: commitOutput,
+    retryingPush,
     pushed: pushResult.pushed,
     pushMode: pushResult.mode,
     pushBranch: pushResult.branchName,
