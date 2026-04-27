@@ -3,6 +3,7 @@ const repoInput = document.querySelector("#repo-url");
 const runButton = document.querySelector("#run-button");
 const refreshButton = document.querySelector("#refresh-button");
 const approveButton = document.querySelector("#approve-button");
+const rejectButton = document.querySelector("#reject-button");
 const historyList = document.querySelector("#history-list");
 const emptyState = document.querySelector("#empty-state");
 const reviewContent = document.querySelector("#review-content");
@@ -62,7 +63,7 @@ function updateMetrics(review) {
   metrics.files.textContent = review?.summary?.filesScanned ?? 0;
   metrics.errors.textContent = review?.summary?.errorsFound ?? 0;
   metrics.proposals.textContent = review?.summary?.proposalsFound ?? 0;
-  metrics.stack.textContent = review?.summary?.detectedStack ?? "Waiting";
+  metrics.stack.textContent = review?.status ?? "Waiting";
 }
 
 function renderHistory() {
@@ -72,12 +73,16 @@ function renderHistory() {
           (review) => `
             <button class="history-item ${selectedReview?.id === review.id ? "active" : ""}" data-run-id="${escapeHtml(review.id)}" type="button">
               <strong>${escapeHtml(formatRunName(review))}</strong>
-              <span>${escapeHtml(new Date(review.createdAt).toLocaleString())}</span>
+              <span>${escapeHtml(review.status || "unknown")} / ${escapeHtml(new Date(review.createdAt).toLocaleString())}</span>
             </button>
           `,
         )
         .join("")
-    : `<div class="record"><p>No ad hoc runs yet.</p></div>`;
+    : `<div class="record"><p>No background jobs yet.</p></div>`;
+}
+
+function isClosedProposal(proposal) {
+  return ["pushed", "push_failed", "rejected", "committed"].includes(proposal.status);
 }
 
 function renderProposals(review) {
@@ -86,21 +91,28 @@ function renderProposals(review) {
         .map(
           (proposal) => `
             <article class="proposal">
-              <input type="checkbox" value="${escapeHtml(proposal.id)}" ${proposal.status === "committed" ? "disabled" : ""} aria-label="Select ${escapeHtml(proposal.title)}" />
+              <input type="checkbox" value="${escapeHtml(proposal.id)}" ${isClosedProposal(proposal) ? "disabled" : ""} aria-label="Select ${escapeHtml(proposal.title)}" />
               <div>
                 <h3>${escapeHtml(proposal.title)}</h3>
                 <p>${escapeHtml(proposal.summary)}</p>
+                ${proposal.rejectionReason ? `<p class="decision-note">${escapeHtml(proposal.rejectionReason)}</p>` : ""}
                 <div class="meta-row">
                   <span class="badge">${escapeHtml(proposal.category)}</span>
                   <span class="badge ${proposal.risk === "medium" ? "warn" : ""}">${escapeHtml(proposal.risk)} risk</span>
                 </div>
               </div>
-              <span class="badge ${proposal.status === "committed" ? "success" : ""}">${escapeHtml(proposal.status)}</span>
+              <span class="badge ${
+                ["pushed", "committed"].includes(proposal.status)
+                  ? "success"
+                  : ["rejected", "push_failed"].includes(proposal.status)
+                    ? "danger"
+                    : ""
+              }">${escapeHtml(proposal.status)}</span>
             </article>
           `,
         )
         .join("")
-    : `<div class="record"><p>No proposals were generated for this run.</p></div>`;
+    : `<div class="record"><p>${escapeHtml(["queued", "running"].includes(review.status) ? "Background review is still running." : "No proposals were generated for this run.")}</p></div>`;
 }
 
 function renderRecords(container, records, emptyText, mapper) {
@@ -113,7 +125,7 @@ function renderReview(review) {
   selectedReview = review;
   emptyState.classList.add("hidden");
   reviewContent.classList.remove("hidden");
-  reviewTitle.textContent = formatRunName(review);
+  reviewTitle.textContent = `${formatRunName(review)} / ${review.status || "unknown"}`;
   updateMetrics(review);
   renderHistory();
   renderProposals(review);
@@ -137,12 +149,18 @@ function renderReview(review) {
       <span class="badge">${escapeHtml(new Date(log.at).toLocaleTimeString())}</span>
     </div>
   `);
-  syncApprovalButton();
+  syncDecisionButtons();
 }
 
-function syncApprovalButton() {
-  const selected = panels.proposals.querySelectorAll("input[type='checkbox']:checked").length;
-  approveButton.disabled = !selected || !selectedReview;
+function selectedProposalIds() {
+  return [...panels.proposals.querySelectorAll("input[type='checkbox']:checked")].map((input) => input.value);
+}
+
+function syncDecisionButtons() {
+  const selected = selectedProposalIds().length;
+  const canDecide = selectedReview?.status === "completed";
+  approveButton.disabled = !selected || !selectedReview || !canDecide;
+  rejectButton.disabled = !selected || !selectedReview || !canDecide;
 }
 
 async function loadReviews() {
@@ -154,12 +172,18 @@ async function loadReviews() {
     if (updated) renderReview(updated);
   }
   renderHistory();
+  window.clearTimeout(loadReviews.pollTimer);
+  if (reviews.some((review) => ["queued", "running"].includes(review.status))) {
+    loadReviews.pollTimer = window.setTimeout(() => {
+      loadReviews().catch((error) => showToast(error.message));
+    }, 2500);
+  }
 }
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   runButton.disabled = true;
-  runButton.innerHTML = `<span class="button-icon">↻</span> Running`;
+  runButton.innerHTML = `<span class="button-icon">Run</span> Queueing`;
   try {
     const review = await api("/api/reviews", {
       method: "POST",
@@ -167,12 +191,13 @@ form.addEventListener("submit", async (event) => {
     });
     reviews = [review, ...reviews.filter((item) => item.id !== review.id)];
     renderReview(review);
-    showToast("Review complete. Proposals are ready for approval.");
+    loadReviews().catch((error) => showToast(error.message));
+    showToast("Background review started. You can queue another repo now.");
   } catch (error) {
     showToast(error.message);
   } finally {
     runButton.disabled = false;
-    runButton.innerHTML = `<span class="button-icon">↻</span> Run`;
+    runButton.innerHTML = `<span class="button-icon">Run</span> Queue`;
   }
 });
 
@@ -190,12 +215,12 @@ document.querySelector(".tabs").addEventListener("click", (event) => {
   Object.entries(panels).forEach(([name, panel]) => panel.classList.toggle("hidden", name !== tab.dataset.tab));
 });
 
-panels.proposals.addEventListener("change", syncApprovalButton);
+panels.proposals.addEventListener("change", syncDecisionButtons);
 
 approveButton.addEventListener("click", async () => {
-  const proposalIds = [...panels.proposals.querySelectorAll("input[type='checkbox']:checked")].map((input) => input.value);
+  const proposalIds = selectedProposalIds();
   approveButton.disabled = true;
-  approveButton.innerHTML = `<span class="button-icon">✓</span> Committing`;
+  approveButton.innerHTML = `<span class="button-icon">OK</span> Pushing`;
   try {
     const review = await api(`/api/reviews/${selectedReview.id}/approve`, {
       method: "POST",
@@ -203,12 +228,30 @@ approveButton.addEventListener("click", async () => {
     });
     reviews = reviews.map((item) => (item.id === review.id ? review : item));
     renderReview(review);
-    showToast("Approved proposals committed in the cloned repo.");
+    showToast(review.lastApproval?.pushed ? "Approved proposals pushed to the target repo." : "Commit created, but push failed. Check fixes/logs.");
   } catch (error) {
     showToast(error.message);
   } finally {
-    approveButton.innerHTML = `<span class="button-icon">✓</span> Approve selected`;
-    syncApprovalButton();
+    approveButton.innerHTML = `<span class="button-icon">OK</span> Approve and push`;
+    syncDecisionButtons();
+  }
+});
+
+rejectButton.addEventListener("click", async () => {
+  const proposalIds = selectedProposalIds();
+  rejectButton.disabled = true;
+  try {
+    const review = await api(`/api/reviews/${selectedReview.id}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ proposalIds, reason: "Rejected from operator UI." }),
+    });
+    reviews = reviews.map((item) => (item.id === review.id ? review : item));
+    renderReview(review);
+    showToast("Selected proposals rejected.");
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    syncDecisionButtons();
   }
 });
 

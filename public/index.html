@@ -28,8 +28,8 @@
               required
             />
             <button type="submit" id="run-button">
-              <span class="button-icon">↻</span>
-              Run
+              <span class="button-icon">Run</span>
+              Queue
             </button>
           </div>
         </form>
@@ -49,7 +49,7 @@
           <strong id="metric-proposals">0</strong>
         </div>
         <div class="metric">
-          <span class="metric-label">Stack</span>
+          <span class="metric-label">Status</span>
           <strong id="metric-stack">Waiting</strong>
         </div>
       </section>
@@ -57,8 +57,8 @@
       <section class="review-layout">
         <aside class="history-panel">
           <div class="panel-header">
-            <h2>Runs</h2>
-            <button class="icon-button" id="refresh-button" type="button" title="Refresh runs">⟳</button>
+            <h2>Background jobs</h2>
+            <button class="icon-button" id="refresh-button" type="button" title="Refresh runs">R</button>
           </div>
           <div id="history-list" class="history-list"></div>
         </aside>
@@ -72,8 +72,8 @@
           </div>
 
           <div id="empty-state" class="empty-state">
-            <h2>Paste a public GitHub repo to run a review.</h2>
-            <p>The run clones the repo, checks common quality signals, runs available npm scripts, searches npm package freshness, and prepares approval-ready proposals. Approved changes are recorded back into the target repo in Markdown audit files.</p>
+            <h2>Paste a public GitHub repo to queue a background review.</h2>
+            <p>The app can run multiple repositories in parallel, show each job's results, and record approved proposal progress back into the target repo before pushing.</p>
           </div>
 
           <div id="review-content" class="review-content hidden">
@@ -82,10 +82,15 @@
                 <p class="eyebrow">Current run</p>
                 <h2 id="review-title">No run selected</h2>
               </div>
-              <button id="approve-button" class="approve-button" type="button" disabled>
-                <span class="button-icon">✓</span>
-                Approve selected
-              </button>
+              <div class="decision-actions">
+                <button id="approve-button" class="approve-button" type="button" disabled>
+                  <span class="button-icon">OK</span>
+                  Approve and push
+                </button>
+                <button id="reject-button" class="reject-button" type="button" disabled>
+                  Reject selected
+                </button>
+              </div>
             </div>
 
             <div id="tab-proposals" class="tab-panel"></div>

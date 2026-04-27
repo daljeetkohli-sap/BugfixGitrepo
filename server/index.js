@@ -15,6 +15,7 @@ const port = Number(process.env.PORT || 4173);
 const progressFileName = "APP_REVIEW_PROGRESS.md";
 const proposalsFileName = "REVIEW_PROPOSALS.md";
 const reviewLogFileName = "DAILY_REVIEW_LOG.md";
+let stateWriteQueue = Promise.resolve();
 
 const jsonHeaders = { "content-type": "application/json; charset=utf-8" };
 const mimeTypes = new Map([
@@ -39,6 +40,19 @@ async function readState() {
 async function writeState(state) {
   await ensureState();
   await fs.writeFile(stateFile, JSON.stringify(state, null, 2), "utf8");
+}
+
+async function updateRun(runId, updater) {
+  stateWriteQueue = stateWriteQueue
+    .catch(() => {})
+    .then(async () => {
+      const state = await readState();
+      const nextRun = await updater(state[runId]);
+      state[runId] = nextRun;
+      await writeState(state);
+      return nextRun;
+    });
+  return stateWriteQueue;
 }
 
 function sendJson(res, status, body) {
@@ -254,6 +268,9 @@ async function buildReview(runId, repoUrl, repoDir) {
     repoUrl,
     repoDir,
     createdAt: new Date().toISOString(),
+    status: "completed",
+    statusMessage: "Review completed. Proposals are ready for approval or rejection.",
+    completedAt: new Date().toISOString(),
     summary: {
       filesScanned: files.length,
       errorsFound: errors.length,
@@ -274,15 +291,78 @@ async function startReview(repoUrl) {
   await ensureState();
   const runId = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
   const repoDir = path.join(runsDir, `${repoSlug(repoUrl)}-${runId}`);
-  const clone = await runCommand("git", ["clone", "--depth", "1", repoUrl, repoDir], { cwd: rootDir });
-  if (clone.code !== 0) {
-    throw new Error(clone.stderr || clone.stdout || "git clone failed");
-  }
-  const review = await buildReview(runId, repoUrl, repoDir);
+  const review = {
+    id: runId,
+    repoUrl,
+    repoDir,
+    createdAt: new Date().toISOString(),
+    status: "queued",
+    statusMessage: "Waiting for the background worker.",
+    summary: {
+      filesScanned: 0,
+      errorsFound: 0,
+      proposalsFound: 0,
+      detectedStack: "Queued",
+    },
+    logs: [{ at: new Date().toISOString(), level: "info", message: "Background review queued", detail: repoUrl }],
+    errors: [],
+    fixes: [],
+    proposals: [],
+  };
   const state = await readState();
   state[runId] = review;
   await writeState(state);
+  runReviewJob(runId, repoUrl, repoDir);
   return review;
+}
+
+async function runReviewJob(runId, repoUrl, repoDir) {
+  await updateRun(runId, (review) => ({
+    ...review,
+    status: "running",
+    statusMessage: "Cloning repository and running checks.",
+    startedAt: new Date().toISOString(),
+    logs: [...(review?.logs || []), { at: new Date().toISOString(), level: "info", message: "Background review started", detail: repoUrl }],
+  }));
+
+  const clone = await runCommand("git", ["clone", "--depth", "1", repoUrl, repoDir], { cwd: rootDir });
+  if (clone.code !== 0) {
+    await updateRun(runId, (review) => ({
+      ...review,
+      status: "failed",
+      statusMessage: "Repository clone failed.",
+      completedAt: new Date().toISOString(),
+      errors: [
+        ...(review?.errors || []),
+        { severity: "high", area: "clone", message: "git clone failed", detail: clone.stderr || clone.stdout },
+      ],
+      logs: [
+        ...(review?.logs || []),
+        { at: new Date().toISOString(), level: "error", message: "git clone failed", detail: clone.stderr || clone.stdout },
+      ],
+    }));
+    return;
+  }
+
+  try {
+    const review = await buildReview(runId, repoUrl, repoDir);
+    await updateRun(runId, () => review);
+  } catch (error) {
+    await updateRun(runId, (review) => ({
+      ...review,
+      status: "failed",
+      statusMessage: "Review failed during analysis.",
+      completedAt: new Date().toISOString(),
+      errors: [
+        ...(review?.errors || []),
+        { severity: "high", area: "analysis", message: error.message || "Review failed" },
+      ],
+      logs: [
+        ...(review?.logs || []),
+        { at: new Date().toISOString(), level: "error", message: "Review failed", detail: error.message || "" },
+      ],
+    }));
+  }
 }
 
 async function appendReviewFile(repoDir, title, lines) {
@@ -329,6 +409,7 @@ async function approveProposals(runId, proposalIds) {
   const state = await readState();
   const review = state[runId];
   if (!review) throw new Error("Review run not found.");
+  if (review.status !== "completed") throw new Error("Review must complete before proposals can be approved.");
   const selected = review.proposals.filter((proposal) => proposalIds.includes(proposal.id));
   if (!selected.length) throw new Error("Select at least one proposal to approve.");
 
@@ -369,17 +450,55 @@ async function approveProposals(runId, proposalIds) {
 
   const add = await runCommand("git", ["add", progressFileName, proposalsFileName, reviewLogFileName], { cwd: review.repoDir });
   if (add.code !== 0) throw new Error(add.stderr || "git add failed");
+  await runCommand("git", ["config", "user.name", "Ad Hoc GitHub Reviewer"], { cwd: review.repoDir });
+  await runCommand("git", ["config", "user.email", "reviewer-bot@users.noreply.github.com"], { cwd: review.repoDir });
   const commit = await runCommand("git", ["commit", "-m", "Apply approved app review proposals"], { cwd: review.repoDir });
   if (commit.code !== 0) throw new Error(commit.stderr || commit.stdout || "git commit failed");
+  const branch = await runCommand("git", ["branch", "--show-current"], { cwd: review.repoDir });
+  const branchName = branch.stdout || "main";
+  const push = await runCommand("git", ["push", "origin", `HEAD:${branchName}`], { cwd: review.repoDir });
+  const pushed = push.code === 0;
 
   review.proposals = review.proposals.map((proposal) =>
-    proposalIds.includes(proposal.id) ? { ...proposal, status: "committed" } : proposal,
+    proposalIds.includes(proposal.id) ? { ...proposal, status: pushed ? "pushed" : "push_failed" } : proposal,
   );
   review.lastApproval = {
     at: timestamp,
     proposalIds,
     commit: commit.stdout || commit.stderr,
+    pushed,
+    push: push.stdout || push.stderr,
   };
+  review.fixes = [
+    ...review.fixes,
+    {
+      status: pushed ? "pushed" : "push-failed",
+      message: pushed
+        ? `Approved proposal records were committed and pushed to ${branchName}.`
+        : `Approved proposal records were committed locally, but push failed: ${push.stderr || push.stdout}`,
+    },
+  ];
+  state[runId] = review;
+  await writeState(state);
+  return review;
+}
+
+async function rejectProposals(runId, proposalIds, reason = "") {
+  const state = await readState();
+  const review = state[runId];
+  if (!review) throw new Error("Review run not found.");
+  if (review.status !== "completed") throw new Error("Review must complete before proposals can be rejected.");
+  if (!proposalIds.length) throw new Error("Select at least one proposal to reject.");
+  const timestamp = new Date().toISOString();
+  review.proposals = review.proposals.map((proposal) =>
+    proposalIds.includes(proposal.id)
+      ? { ...proposal, status: "rejected", rejectedAt: timestamp, rejectionReason: reason || "Rejected by user." }
+      : proposal,
+  );
+  review.logs = [
+    ...review.logs,
+    { at: timestamp, level: "info", message: "Proposals rejected", detail: proposalIds.join(", ") },
+  ];
   state[runId] = review;
   await writeState(state);
   return review;
@@ -411,6 +530,17 @@ const server = createServer(async (req, res) => {
       const runId = url.pathname.split("/")[3];
       const body = await readJson(req);
       const review = await approveProposals(runId, Array.isArray(body.proposalIds) ? body.proposalIds : []);
+      sendJson(res, 200, review);
+      return;
+    }
+    if (req.method === "POST" && url.pathname.startsWith("/api/reviews/") && url.pathname.endsWith("/reject")) {
+      const runId = url.pathname.split("/")[3];
+      const body = await readJson(req);
+      const review = await rejectProposals(
+        runId,
+        Array.isArray(body.proposalIds) ? body.proposalIds : [],
+        String(body.reason || ""),
+      );
       sendJson(res, 200, review);
       return;
     }

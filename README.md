@@ -20,7 +20,7 @@ Open the read-only stakeholder view:
 http://localhost:4173/viewer.html
 ```
 
-The operator console can run a review, show logs, and approve proposals into a local commit. The viewer page is read-only and is intended for someone else to inspect the latest runs, errors, proposals, and approved changes.
+The operator console can queue multiple background reviews, show logs, and let a user approve or reject each proposal. Approved proposals are committed into the cloned target repo and pushed back to that app's current branch when credentials allow it. The viewer page is read-only and is intended for someone else to inspect the latest runs, errors, proposals, and approved changes.
 
 When proposals are approved, the changed target repository receives Markdown audit files:
 

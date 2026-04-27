@@ -144,7 +144,8 @@ button:disabled {
 }
 
 #run-button,
-.approve-button {
+.approve-button,
+.reject-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -153,6 +154,19 @@ button:disabled {
   padding: 0 18px;
   background: var(--accent);
   color: #fff;
+}
+
+.reject-button {
+  border: 1px solid var(--line);
+  background: #fef3f2;
+  color: var(--danger);
+}
+
+.decision-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
 }
 
 .secondary-button {
@@ -169,6 +183,10 @@ button:disabled {
 #run-button:hover,
 .approve-button:hover {
   background: var(--accent-dark);
+}
+
+.reject-button:hover {
+  background: #fee4e2;
 }
 
 .button-icon {
@@ -355,6 +373,13 @@ button:disabled {
   line-height: 1.45;
 }
 
+.proposal .decision-note {
+  margin-top: 8px;
+  color: var(--danger);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -503,8 +528,13 @@ button:disabled {
   }
 
   #run-button,
-  .approve-button {
+  .approve-button,
+  .reject-button {
     width: 100%;
+  }
+
+  .decision-actions {
+    justify-content: stretch;
   }
 
   .review-title-row {

@@ -13,7 +13,7 @@
           <p class="eyebrow">GitHub Pages preview</p>
           <h1>Ad Hoc GitHub Reviewer</h1>
           <p class="lead">
-            A public read-only view of the review workflow. The live operator app runs on Node.js so it can clone repositories, inspect logs, prepare proposals, and commit approved changes.
+            A public read-only view of the review workflow. The live operator app runs on Node.js so it can queue background reviews, clone repositories, inspect logs, prepare proposals, and push approved changes.
           </p>
         </div>
         <a class="primary-link" href="https://github.com/daljeetkohli-sap/BugfixGitrepo">View source</a>
@@ -30,7 +30,7 @@
         </article>
         <article class="metric">
           <span>Approval</span>
-          <strong>Operator only</strong>
+          <strong>Approve/reject</strong>
         </article>
         <article class="metric">
           <span>Deploy</span>
@@ -53,7 +53,7 @@
           <ul>
             <li>Cloning a public GitHub repository.</li>
             <li>Running repository checks and collecting logs.</li>
-            <li>Approving proposals and creating commits.</li>
+            <li>Approving or rejecting proposals, creating commits, and pushing approved records.</li>
           </ul>
         </article>
       </section>
@@ -78,7 +78,7 @@
           </article>
           <article>
             <h3>Fixes Done</h3>
-            <p>Approved fixes are committed by the backend workflow, then can be pushed to GitHub.</p>
+            <p>Approved fixes are committed and pushed by the backend workflow when target repo credentials allow it.</p>
           </article>
           <article>
             <h3>Reviewer Access</h3>

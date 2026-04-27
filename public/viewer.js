@@ -6,7 +6,7 @@ const metrics = {
   runs: document.querySelector("#metric-runs"),
   errors: document.querySelector("#metric-errors"),
   proposals: document.querySelector("#metric-proposals"),
-  committed: document.querySelector("#metric-committed"),
+  pushed: document.querySelector("#metric-pushed"),
 };
 
 function escapeHtml(value) {
@@ -41,7 +41,8 @@ function formatRunName(review) {
 }
 
 function renderReview(review) {
-  const committed = review.proposals.filter((proposal) => proposal.status === "committed");
+  const pushed = review.proposals.filter((proposal) => proposal.status === "pushed");
+  const rejected = review.proposals.filter((proposal) => proposal.status === "rejected");
   const proposalItems = review.proposals.length
     ? review.proposals
         .map(
@@ -76,7 +77,7 @@ function renderReview(review) {
           <p class="eyebrow">${escapeHtml(new Date(review.createdAt).toLocaleString())}</p>
           <h2>${escapeHtml(formatRunName(review))}</h2>
         </div>
-        <span class="badge ${committed.length ? "success" : ""}">${committed.length} committed</span>
+        <span class="badge ${pushed.length ? "success" : rejected.length ? "danger" : ""}">${pushed.length} pushed / ${rejected.length} rejected</span>
       </header>
       <div class="viewer-card-grid">
         <section>
@@ -101,14 +102,14 @@ async function loadReviews() {
   const reviews = await api("/api/reviews");
   const errors = reviews.reduce((total, review) => total + review.errors.length, 0);
   const proposals = reviews.reduce((total, review) => total + review.proposals.length, 0);
-  const committed = reviews.reduce(
-    (total, review) => total + review.proposals.filter((proposal) => proposal.status === "committed").length,
+  const pushed = reviews.reduce(
+    (total, review) => total + review.proposals.filter((proposal) => proposal.status === "pushed").length,
     0,
   );
   metrics.runs.textContent = reviews.length;
   metrics.errors.textContent = errors;
   metrics.proposals.textContent = proposals;
-  metrics.committed.textContent = committed;
+  metrics.pushed.textContent = pushed;
   summaryText.textContent = reviews.length
     ? "This read-only page lets stakeholders inspect review output and approved changes. Approved target repos receive Markdown audit records with the change progress."
     : "No review runs are available yet. Run one from the operator console, then share this view.";
