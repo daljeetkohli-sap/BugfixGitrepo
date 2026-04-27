@@ -40,6 +40,8 @@ When proposals are approved, the changed target repository receives Markdown aud
 - `REVIEW_PROPOSALS.md` records the approved proposal details.
 - `DAILY_REVIEW_LOG.md` records command findings and approved fixes.
 
+For React/Vite target apps, approved market or feature proposals also create a visible `AppReviewEnhancements` component and inject it into the app so the public UI can show the approved market-driven changes after the target app deploys.
+
 ## Public GitHub Pages View
 
 This repo also includes a static GitHub Pages preview in the `docs` folder. It is safe to share publicly because it does not run repository commands or expose approval controls.

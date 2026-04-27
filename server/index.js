@@ -1068,6 +1068,213 @@ async function appendReviewFile(repoDir, title, lines) {
   await fs.writeFile(file, content, "utf8");
 }
 
+function jsString(value) {
+  return JSON.stringify(value ?? "");
+}
+
+function buildEnhancementComponent(review, selected, timestamp) {
+  const features = selected
+    .filter((proposal) => ["feature", "market", "bugfix"].includes(proposal.category))
+    .map((proposal) => ({
+      title: proposal.title,
+      category: proposal.category,
+      risk: proposal.risk,
+      summary: proposal.summary,
+    }));
+  const comparisons = review.comparisons || {};
+  const products = (comparisons.marketProducts || []).map((product) => ({
+    name: product.name,
+    positioning: product.positioning,
+    url: product.url,
+    features: product.features,
+  }));
+  const gaps = (comparisons.featureGaps || [])
+    .filter((gap) => gap.gap)
+    .slice(0, 8)
+    .map((gap) => ({
+      feature: gap.feature,
+      seenIn: gap.seenIn,
+    }));
+
+  return `const implementedFeatures = ${JSON.stringify(features, null, 2)};
+const comparedProducts = ${JSON.stringify(products, null, 2)};
+const featureGaps = ${JSON.stringify(gaps, null, 2)};
+
+export default function AppReviewEnhancements() {
+  if (!implementedFeatures.length) return null;
+
+  return (
+    <section className="app-review-enhancements" aria-label="Approved market review enhancements">
+      <div className="app-review-enhancements__header">
+        <div>
+          <p className="app-review-eyebrow">Approved market review</p>
+          <h2>Market-Driven Enhancements</h2>
+          <p>
+            Approved from GitHub App Reviewer on ${jsString(timestamp)} for ${jsString(review.repoUrl)}.
+            These items are now visible in the app and tracked in the repository audit files.
+          </p>
+        </div>
+        <span>{implementedFeatures.length} approved</span>
+      </div>
+
+      <div className="app-review-enhancements__grid">
+        {implementedFeatures.map((feature) => (
+          <article key={feature.title} className="app-review-enhancement-card">
+            <div className="app-review-card-meta">
+              <span>{feature.category}</span>
+              <span>{feature.risk} risk</span>
+            </div>
+            <h3>{feature.title}</h3>
+            <p>{feature.summary}</p>
+          </article>
+        ))}
+      </div>
+
+      <div className="app-review-market-grid">
+        <article>
+          <h3>Compared Market Tools</h3>
+          <ul>
+            {comparedProducts.map((product) => (
+              <li key={product.name}>
+                <a href={product.url} target="_blank" rel="noreferrer">{product.name}</a>
+                <span>{product.positioning}</span>
+              </li>
+            ))}
+          </ul>
+        </article>
+        <article>
+          <h3>Top Feature Gaps</h3>
+          <ul>
+            {featureGaps.map((gap) => (
+              <li key={gap.feature}>
+                <strong>{gap.feature}</strong>
+                <span>Seen in {gap.seenIn.join(', ')}</span>
+              </li>
+            ))}
+          </ul>
+        </article>
+      </div>
+    </section>
+  );
+}
+`;
+}
+
+async function applyReactVisibleEnhancement(review, selected, timestamp) {
+  const hasVisibleFeature = selected.some((proposal) => ["feature", "market", "bugfix"].includes(proposal.category));
+  const appFile = path.join(review.repoDir, "src", "App.jsx");
+  const stylesFile = path.join(review.repoDir, "src", "styles.css");
+  if (!hasVisibleFeature || !existsSync(appFile) || !existsSync(stylesFile)) {
+    return [];
+  }
+
+  const componentFile = path.join(review.repoDir, "src", "AppReviewEnhancements.jsx");
+  await fs.writeFile(componentFile, buildEnhancementComponent(review, selected, timestamp), "utf8");
+
+  let appSource = await fs.readFile(appFile, "utf8");
+  if (!appSource.includes("AppReviewEnhancements")) {
+    appSource = `import AppReviewEnhancements from './AppReviewEnhancements.jsx';\n${appSource}`;
+  }
+  if (!appSource.includes("<AppReviewEnhancements />")) {
+    const toastMarker = /\s+\{toast \? <div className="toast" role="status">\{toast\}<\/div> : null\}/;
+    if (toastMarker.test(appSource)) {
+      appSource = appSource.replace(toastMarker, `\n      <AppReviewEnhancements />\n\n      {toast ? <div className="toast" role="status">{toast}</div> : null}`);
+    } else {
+      appSource = appSource.replace(/<\/main>/, `      <AppReviewEnhancements />\n    </main>`);
+    }
+    await fs.writeFile(appFile, appSource, "utf8");
+  }
+
+  let stylesSource = await fs.readFile(stylesFile, "utf8");
+  if (!stylesSource.includes(".app-review-enhancements")) {
+    stylesSource += `
+
+.app-review-enhancements {
+  display: grid;
+  gap: 18px;
+  margin-top: 22px;
+  padding: 22px;
+  border: 1px solid rgba(36, 99, 235, 0.22);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(239, 246, 255, 0.96), rgba(236, 253, 245, 0.96));
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+}
+
+.app-review-enhancements__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.app-review-enhancements__header h2,
+.app-review-enhancement-card h3,
+.app-review-market-grid h3 {
+  margin: 0;
+}
+
+.app-review-enhancements__header p,
+.app-review-enhancement-card p,
+.app-review-market-grid span {
+  color: #475569;
+}
+
+.app-review-eyebrow,
+.app-review-enhancements__header > span,
+.app-review-card-meta span {
+  color: #1d4ed8;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.app-review-enhancements__grid,
+.app-review-market-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+}
+
+.app-review-enhancement-card,
+.app-review-market-grid article {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.app-review-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.app-review-market-grid ul {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-review-market-grid li {
+  display: grid;
+  gap: 4px;
+}
+
+.app-review-market-grid a {
+  color: #1d4ed8;
+  font-weight: 800;
+}
+`;
+    await fs.writeFile(stylesFile, stylesSource, "utf8");
+  }
+
+  return ["src/AppReviewEnhancements.jsx", "src/App.jsx", "src/styles.css"];
+}
+
 function buildProgressEntry(review, selected, timestamp) {
   const lines = [
     `# App Review Progress`,
@@ -1159,6 +1366,7 @@ async function approveProposals(runId, proposalIds) {
   const retryingPush = selected.every((proposal) => proposal.status === "push_failed") && review.lastApproval?.pushed === false;
   let commitOutput = review.lastApproval?.commit || "";
   if (!retryingPush) {
+    const implementedFiles = await applyReactVisibleEnhancement(review, selected, timestamp);
     await appendReviewFile(review.repoDir, progressFileName, buildProgressEntry(review, selected, timestamp));
     await appendReviewFile(review.repoDir, proposalsFileName, [
       `# Approved Review Proposals`,
@@ -1191,9 +1399,10 @@ async function approveProposals(runId, proposalIds) {
       `## Approved Fixes`,
       ``,
       ...selected.map((proposal) => `- ${proposal.title}: ${proposal.summary}`),
+      ...(implementedFiles.length ? ["", "## Visible App Changes", "", ...implementedFiles.map((file) => `- ${file}`)] : []),
     ]);
 
-    const add = await runCommand("git", ["add", progressFileName, proposalsFileName, reviewLogFileName], { cwd: review.repoDir });
+    const add = await runCommand("git", ["add", progressFileName, proposalsFileName, reviewLogFileName, ...implementedFiles], { cwd: review.repoDir });
     if (add.code !== 0) throw new Error(add.stderr || "git add failed");
     await runCommand("git", ["config", "user.name", "Ad Hoc GitHub Reviewer"], { cwd: review.repoDir });
     await runCommand("git", ["config", "user.email", "reviewer-bot@users.noreply.github.com"], { cwd: review.repoDir });
