@@ -16,6 +16,10 @@ const progressFileName = "APP_REVIEW_PROGRESS.md";
 const proposalsFileName = "REVIEW_PROPOSALS.md";
 const reviewLogFileName = "DAILY_REVIEW_LOG.md";
 let stateWriteQueue = Promise.resolve();
+const windowsCommandPaths = {
+  git: "C:\\Program Files\\Git\\cmd\\git.exe",
+  npm: "C:\\Program Files\\nodejs\\npm.cmd",
+};
 
 const jsonHeaders = { "content-type": "application/json; charset=utf-8" };
 const mimeTypes = new Map([
@@ -70,9 +74,10 @@ async function readJson(req) {
 function runCommand(command, args, options = {}) {
   return new Promise((resolve) => {
     const startedAt = Date.now();
-    const child = spawn(command, args, {
+    const executable = process.platform === "win32" ? windowsCommandPaths[command] || command : command;
+    const child = spawn(executable, args, {
       cwd: options.cwd || rootDir,
-      shell: process.platform === "win32",
+      shell: false,
       env: { ...process.env, ...(options.env || {}) },
     });
     let stdout = "";
@@ -83,9 +88,18 @@ function runCommand(command, args, options = {}) {
     child.stderr.on("data", (data) => {
       stderr += data.toString();
     });
+    child.on("error", (error) => {
+      resolve({
+        command: [executable, ...args].join(" "),
+        code: -1,
+        stdout: stdout.trim(),
+        stderr: `${error.code || "SPAWN_ERROR"}: ${error.message}`,
+        durationMs: Date.now() - startedAt,
+      });
+    });
     child.on("close", (code) => {
       resolve({
-        command: [command, ...args].join(" "),
+        command: [executable, ...args].join(" "),
         code,
         stdout: stdout.trim(),
         stderr: stderr.trim(),
