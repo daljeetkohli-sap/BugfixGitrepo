@@ -1096,7 +1096,9 @@ function buildEnhancementComponent(review, selected, timestamp) {
       seenIn: gap.seenIn,
     }));
 
-  return `const implementedFeatures = ${JSON.stringify(features, null, 2)};
+  return `import React from 'react';
+
+const implementedFeatures = ${JSON.stringify(features, null, 2)};
 const comparedProducts = ${JSON.stringify(products, null, 2)};
 const featureGaps = ${JSON.stringify(gaps, null, 2)};
 
