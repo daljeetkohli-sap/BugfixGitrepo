@@ -722,6 +722,13 @@ async function buildReview(runId, repoUrl, repoDir) {
     status: "completed",
     statusMessage: "Review completed. Proposals are ready for approval or rejection.",
     completedAt: new Date().toISOString(),
+    comparisons: {
+      category: appProfile.category,
+      searchTerms: appProfile.searchTerms,
+      githubRepositories: comparableRepos,
+      npmPackages: comparablePackages,
+      fallbackFeatureIdeas: appProfile.featureIdeas,
+    },
     summary: {
       filesScanned: files.length,
       errorsFound: errors.length,
@@ -759,6 +766,13 @@ async function startReview(repoUrl) {
     errors: [],
     fixes: [],
     proposals: [],
+    comparisons: {
+      category: "Queued",
+      searchTerms: [],
+      githubRepositories: [],
+      npmPackages: [],
+      fallbackFeatureIdeas: [],
+    },
   };
   const state = await readState();
   state[runId] = review;

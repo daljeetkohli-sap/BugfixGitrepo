@@ -11,6 +11,7 @@ const reviewTitle = document.querySelector("#review-title");
 const toast = document.querySelector("#toast");
 const panels = {
   proposals: document.querySelector("#tab-proposals"),
+  comparisons: document.querySelector("#tab-comparisons"),
   errors: document.querySelector("#tab-errors"),
   fixes: document.querySelector("#tab-fixes"),
   logs: document.querySelector("#tab-logs"),
@@ -121,6 +122,70 @@ function renderRecords(container, records, emptyText, mapper) {
     : `<div class="record"><p>${escapeHtml(emptyText)}</p></div>`;
 }
 
+function renderComparisons(review) {
+  const comparisons = review.comparisons || {};
+  const repos = comparisons.githubRepositories || [];
+  const packages = comparisons.npmPackages || [];
+  const ideas = comparisons.fallbackFeatureIdeas || [];
+  panels.comparisons.innerHTML = `
+    <article class="record comparison-summary">
+      <h3>${escapeHtml(comparisons.category || "No category inferred")}</h3>
+      <p>${escapeHtml((comparisons.searchTerms || []).join(", ") || "No search terms recorded.")}</p>
+    </article>
+    <article class="record">
+      <h3>GitHub tools/repos compared</h3>
+      ${
+        repos.length
+          ? `<div class="comparison-list">${repos
+              .map(
+                (repo) => `
+                  <a class="comparison-item" href="${escapeHtml(repo.url)}" target="_blank" rel="noreferrer">
+                    <strong>${escapeHtml(repo.fullName)}</strong>
+                    <span>${escapeHtml(repo.description || "No description available.")}</span>
+                    <small>${escapeHtml(repo.stars)} stars / matched "${escapeHtml(repo.term)}"</small>
+                  </a>
+                `,
+              )
+              .join("")}</div>`
+          : `<p>No relevant public GitHub comparable tools were found. The app used generated feature proposals instead.</p>`
+      }
+    </article>
+    <article class="record">
+      <h3>npm packages compared</h3>
+      ${
+        packages.length
+          ? `<div class="comparison-list">${packages
+              .map(
+                (pkg) => `
+                  <div class="comparison-item">
+                    <strong>${escapeHtml(pkg.name)}@${escapeHtml(pkg.version)}</strong>
+                    <span>${escapeHtml(pkg.description || "No description available.")}</span>
+                    <small>matched "${escapeHtml(pkg.term)}"</small>
+                  </div>
+                `,
+              )
+              .join("")}</div>`
+          : `<p>No relevant npm packages were found for this app category.</p>`
+      }
+    </article>
+    <article class="record">
+      <h3>Generated feature ideas</h3>
+      <div class="comparison-list">
+        ${ideas
+          .map(
+            (idea) => `
+              <div class="comparison-item">
+                <strong>${escapeHtml(idea.title)}</strong>
+                <span>${escapeHtml(idea.summary)}</span>
+              </div>
+            `,
+          )
+          .join("") || "<p>No fallback feature ideas recorded.</p>"}
+      </div>
+    </article>
+  `;
+}
+
 function renderReview(review) {
   selectedReview = review;
   emptyState.classList.add("hidden");
@@ -129,6 +194,7 @@ function renderReview(review) {
   updateMetrics(review);
   renderHistory();
   renderProposals(review);
+  renderComparisons(review);
   renderRecords(panels.errors, review.errors, "No errors found.", (error) => `
     <h3>${escapeHtml(error.message)}</h3>
     <p>${escapeHtml(error.detail || error.area)}</p>

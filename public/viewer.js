@@ -43,6 +43,9 @@ function formatRunName(review) {
 function renderReview(review) {
   const pushed = review.proposals.filter((proposal) => proposal.status === "pushed");
   const rejected = review.proposals.filter((proposal) => proposal.status === "rejected");
+  const comparisons = review.comparisons || {};
+  const repos = comparisons.githubRepositories || [];
+  const packages = comparisons.npmPackages || [];
   const proposalItems = review.proposals.length
     ? review.proposals
         .map(
@@ -89,6 +92,30 @@ function renderReview(review) {
           <ul>${errorItems}</ul>
         </section>
       </div>
+      <section class="viewer-comparisons">
+        <h3>Compared tools</h3>
+        <p>${escapeHtml(comparisons.category || "No comparison category recorded.")}</p>
+        ${
+          repos.length
+            ? `<ul>${repos
+                .map(
+                  (repo) => `
+                    <li>
+                      <strong>${escapeHtml(repo.fullName)}</strong>
+                      <span>${escapeHtml(repo.description || "No description available.")}</span>
+                      <small>${escapeHtml(repo.stars)} stars / ${escapeHtml(repo.url)}</small>
+                    </li>
+                  `,
+                )
+                .join("")}</ul>`
+            : "<p>No relevant GitHub comparable tools were returned.</p>"
+        }
+        ${
+          packages.length
+            ? `<p>npm: ${packages.map((pkg) => `${escapeHtml(pkg.name)}@${escapeHtml(pkg.version)}`).join(", ")}</p>`
+            : ""
+        }
+      </section>
       <footer class="viewer-footer">
         <span>${escapeHtml(review.summary.filesScanned)} files scanned</span>
         <span>${escapeHtml(review.summary.detectedStack)}</span>
