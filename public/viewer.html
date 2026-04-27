@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GitHub Review Viewer</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="control-band viewer-hero">
+        <div class="brand-block">
+          <p class="eyebrow">Read-only review</p>
+          <h1>Reviewer View</h1>
+          <div class="page-actions">
+            <a href="/">Open operator console</a>
+          </div>
+        </div>
+        <div class="viewer-summary">
+          <p id="viewer-summary-text">Loading review history...</p>
+          <button class="secondary-button" id="viewer-refresh" type="button">Refresh</button>
+        </div>
+      </section>
+
+      <section class="status-grid" aria-live="polite">
+        <div class="metric">
+          <span class="metric-label">Runs</span>
+          <strong id="metric-runs">0</strong>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Errors</span>
+          <strong id="metric-errors">0</strong>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Proposals</span>
+          <strong id="metric-proposals">0</strong>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Committed</span>
+          <strong id="metric-committed">0</strong>
+        </div>
+      </section>
+
+      <section class="viewer-list" id="viewer-list"></section>
+    </main>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="/viewer.js" type="module"></script>
+  </body>
+</html>

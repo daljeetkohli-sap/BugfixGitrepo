@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ad Hoc GitHub Reviewer</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="control-band">
+        <div class="brand-block">
+          <p class="eyebrow">Ad hoc automation</p>
+          <h1>GitHub App Reviewer</h1>
+          <div class="page-actions">
+            <a href="/viewer.html">Open read-only viewer</a>
+          </div>
+        </div>
+        <form id="review-form" class="repo-form">
+          <label for="repo-url">Public repository</label>
+          <div class="input-row">
+            <input
+              id="repo-url"
+              name="repoUrl"
+              type="url"
+              placeholder="https://github.com/org/repo.git"
+              autocomplete="off"
+              required
+            />
+            <button type="submit" id="run-button">
+              <span class="button-icon">↻</span>
+              Run
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section class="status-grid" aria-live="polite">
+        <div class="metric">
+          <span class="metric-label">Files</span>
+          <strong id="metric-files">0</strong>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Errors</span>
+          <strong id="metric-errors">0</strong>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Proposals</span>
+          <strong id="metric-proposals">0</strong>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Stack</span>
+          <strong id="metric-stack">Waiting</strong>
+        </div>
+      </section>
+
+      <section class="review-layout">
+        <aside class="history-panel">
+          <div class="panel-header">
+            <h2>Runs</h2>
+            <button class="icon-button" id="refresh-button" type="button" title="Refresh runs">⟳</button>
+          </div>
+          <div id="history-list" class="history-list"></div>
+        </aside>
+
+        <section class="work-panel">
+          <div class="tabs" role="tablist" aria-label="Review sections">
+            <button class="tab active" data-tab="proposals" type="button">Proposals</button>
+            <button class="tab" data-tab="errors" type="button">Errors</button>
+            <button class="tab" data-tab="fixes" type="button">Fixes</button>
+            <button class="tab" data-tab="logs" type="button">Logs</button>
+          </div>
+
+          <div id="empty-state" class="empty-state">
+            <h2>Paste a public GitHub repo to run a review.</h2>
+            <p>The run clones the repo, checks common quality signals, runs available npm scripts, searches npm package freshness, and prepares approval-ready proposals. Approved changes are recorded back into the target repo in Markdown audit files.</p>
+          </div>
+
+          <div id="review-content" class="review-content hidden">
+            <div class="review-title-row">
+              <div>
+                <p class="eyebrow">Current run</p>
+                <h2 id="review-title">No run selected</h2>
+              </div>
+              <button id="approve-button" class="approve-button" type="button" disabled>
+                <span class="button-icon">✓</span>
+                Approve selected
+              </button>
+            </div>
+
+            <div id="tab-proposals" class="tab-panel"></div>
+            <div id="tab-errors" class="tab-panel hidden"></div>
+            <div id="tab-fixes" class="tab-panel hidden"></div>
+            <div id="tab-logs" class="tab-panel hidden"></div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
