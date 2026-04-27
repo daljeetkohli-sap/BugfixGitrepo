@@ -152,6 +152,59 @@ async function readOptionalJson(file) {
   }
 }
 
+async function readOptionalText(file, maxBytes = 200000) {
+  try {
+    const stat = await fs.stat(file);
+    if (stat.size > maxBytes) return "";
+    return await fs.readFile(file, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+function parseGitHubRepo(repoUrl) {
+  try {
+    const url = new URL(repoUrl);
+    if (url.hostname !== "github.com") return null;
+    const [owner, repoName] = url.pathname.replace(/^\/|\.git$/g, "").split("/");
+    if (!owner || !repoName) return null;
+    return { owner, repo: repoName };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchGitHubRepoMetadata(repoUrl) {
+  const parsed = parseGitHubRepo(repoUrl);
+  if (!parsed) return null;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4500);
+  try {
+    const response = await fetch(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}`, {
+      signal: controller.signal,
+      headers: {
+        accept: "application/vnd.github+json",
+        "user-agent": "adhoc-github-reviewer",
+      },
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return {
+      defaultBranch: data.default_branch,
+      openIssues: data.open_issues_count,
+      pushedAt: data.pushed_at,
+      license: data.license?.spdx_id || null,
+      archived: Boolean(data.archived),
+      visibility: data.visibility,
+      watchers: data.watchers_count,
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function fetchNpmLatest(name) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 3500);
@@ -170,6 +223,34 @@ async function fetchNpmLatest(name) {
   }
 }
 
+async function scanBugRisks(repoDir, files) {
+  const sourceFiles = files
+    .filter((file) => /\.(js|jsx|ts|tsx|mjs|cjs|json|env|md|yml|yaml)$/i.test(file))
+    .slice(0, 180);
+  const findings = [];
+  const checks = [
+    { pattern: /\b(TODO|FIXME|HACK)\b/i, severity: "medium", area: "code-quality", message: "TODO/FIXME/HACK marker found" },
+    { pattern: /console\.(log|debug|trace)\(/, severity: "low", area: "diagnostics", message: "Console diagnostic statement found" },
+    { pattern: /(api[_-]?key|secret|password|token)\s*[:=]\s*['"][^'"]{8,}/i, severity: "high", area: "security", message: "Possible hard-coded credential found" },
+    { pattern: /innerHTML\s*=/, severity: "medium", area: "security", message: "Direct innerHTML assignment found" },
+    { pattern: /eval\s*\(/, severity: "high", area: "security", message: "eval usage found" },
+  ];
+
+  for (const file of sourceFiles) {
+    const text = await readOptionalText(path.join(repoDir, file));
+    if (!text) continue;
+    const lines = text.split(/\r?\n/);
+    for (let index = 0; index < lines.length; index += 1) {
+      for (const check of checks) {
+        if (check.pattern.test(lines[index])) {
+          findings.push({ ...check, file, line: index + 1 });
+        }
+      }
+    }
+  }
+  return findings.slice(0, 40);
+}
+
 async function buildReview(runId, repoUrl, repoDir) {
   const logs = [];
   const errors = [];
@@ -183,10 +264,62 @@ async function buildReview(runId, repoUrl, repoDir) {
 
   const packageJsonPath = path.join(repoDir, "package.json");
   const packageJson = await readOptionalJson(packageJsonPath);
+  const githubMetadata = await fetchGitHubRepoMetadata(repoUrl);
+  if (githubMetadata) {
+    addLog(
+      "success",
+      "Internet check: GitHub repository metadata",
+      `default=${githubMetadata.defaultBranch}; openIssues=${githubMetadata.openIssues}; pushedAt=${githubMetadata.pushedAt}; license=${githubMetadata.license || "none"}`,
+    );
+  } else {
+    addLog("error", "Internet check: GitHub repository metadata unavailable", "Could not read GitHub repository metadata for this URL.");
+  }
+
   const hasGitHubActions = files.some((file) => file.startsWith(".github/workflows/"));
   const hasReadme = files.some((file) => /^readme\.md$/i.test(file));
   const hasEnvExample = files.some((file) => [".env.example", ".env.sample"].includes(file.toLowerCase()));
   const hasTests = files.some((file) => /\.(test|spec)\.[jt]sx?$/.test(file) || file.includes("__tests__/"));
+  const hasLockfile = files.some((file) => ["package-lock.json", "pnpm-lock.yaml", "yarn.lock"].includes(file));
+  const hasDockerfile = files.some((file) => /^dockerfile$/i.test(path.basename(file)));
+  const bugFindings = await scanBugRisks(repoDir, files);
+
+  if (githubMetadata?.archived) {
+    errors.push({ severity: "high", area: "repository", message: "Repository is archived on GitHub." });
+  }
+
+  if (githubMetadata && !githubMetadata.license) {
+    proposals.push({
+      id: "add-license",
+      title: "Add an explicit license",
+      category: "governance",
+      risk: "low",
+      status: "pending",
+      summary: "GitHub metadata does not report a repository license. Add a LICENSE file so reuse and ownership expectations are clear.",
+      action: { type: "append-review-doc", heading: "License recommendation", body: "Add a LICENSE file and document any internal usage restrictions in README.md." },
+    });
+  }
+
+  for (const finding of bugFindings) {
+    errors.push({
+      severity: finding.severity,
+      area: finding.area,
+      message: `${finding.message} in ${finding.file}:${finding.line}`,
+    });
+  }
+
+  if (bugFindings.length) {
+    proposals.push({
+      id: "fix-static-bug-risks",
+      title: "Review static bug-risk findings",
+      category: "bugfix",
+      risk: "medium",
+      status: "pending",
+      summary: `${bugFindings.length} static bug-risk signal(s) were found, including diagnostics, TODO/FIXME markers, or risky JavaScript patterns.`,
+      action: { type: "append-review-doc", heading: "Static bug-risk review", body: "Inspect the listed files and remove stale diagnostics, resolve TODO/FIXME markers, and replace unsafe patterns before deployment." },
+    });
+  } else {
+    fixes.push({ status: "checked", message: "Static bug-risk scan completed with no TODO/FIXME, hard-coded secret, eval, or innerHTML assignment findings in scanned files." });
+  }
 
   if (!hasReadme) {
     errors.push({ severity: "medium", area: "documentation", message: "No README.md was found at the repo root." });
@@ -225,6 +358,18 @@ async function buildReview(runId, repoUrl, repoDir) {
     });
   }
 
+  if (!hasLockfile && packageJson) {
+    proposals.push({
+      id: "add-package-lockfile",
+      title: "Commit a dependency lockfile",
+      category: "dependency",
+      risk: "medium",
+      status: "pending",
+      summary: "package.json exists but no npm/pnpm/yarn lockfile was detected, which can make installs drift between local, CI, and deployment environments.",
+      action: { type: "append-review-doc", heading: "Dependency lockfile", body: "Generate and commit the package manager lockfile, then make CI use the locked install command." },
+    });
+  }
+
   if (packageJson) {
     addLog("info", "Detected Node app", packageJson.name || "package.json found");
     const scripts = packageJson.scripts || {};
@@ -252,11 +397,18 @@ async function buildReview(runId, repoUrl, repoDir) {
 
     const dependencies = { ...(packageJson.dependencies || {}), ...(packageJson.devDependencies || {}) };
     const dependencyNames = Object.keys(dependencies).slice(0, 12);
+    if (!dependencyNames.length) {
+      addLog("info", "Internet check: npm package freshness", "No npm dependencies were declared.");
+    }
     for (const dep of dependencyNames) {
       const latest = await fetchNpmLatest(dep);
-      if (!latest) continue;
+      if (!latest) {
+        addLog("error", `Internet check: npm latest unavailable for ${dep}`, "Could not read npm registry metadata.");
+        continue;
+      }
       const current = dependencies[dep].replace(/^[~^]/, "");
       if (current && current !== latest) {
+        addLog("success", `Internet check: ${dep} has newer npm release`, `${dependencies[dep]} -> ${latest}`);
         proposals.push({
           id: `review-${dep.replace(/[^a-z0-9-]/gi, "-")}-upgrade`,
           title: `Review ${dep} upgrade`,
@@ -266,11 +418,37 @@ async function buildReview(runId, repoUrl, repoDir) {
           summary: `${dep} is declared as ${dependencies[dep]}; npm latest is ${latest}. Review changelog and test before deployment.`,
           action: { type: "append-review-doc", heading: `Dependency review: ${dep}`, body: `${dep} is declared as ${dependencies[dep]}; latest observed version is ${latest}. Review release notes, update in a branch, run tests/build, and deploy after approval.` },
         });
+      } else {
+        addLog("success", `Internet check: ${dep} is current`, `${dependencies[dep]} matches npm latest ${latest}`);
       }
     }
   } else {
     addLog("info", "No package.json detected", "Generic repository review only");
   }
+
+  proposals.push({
+    id: "add-human-approval-audit",
+    title: "Add approval audit visibility",
+    category: "feature",
+    risk: "low",
+    status: "pending",
+    summary: "Expose a small review history page or Markdown changelog in the target app so stakeholders can see which proposals were approved, rejected, pushed, and why.",
+    action: { type: "append-review-doc", heading: "Approval audit visibility", body: "Add a lightweight audit view or link to APP_REVIEW_PROGRESS.md so app owners can trace review decisions after deployment." },
+  });
+
+  if (!hasDockerfile) {
+    proposals.push({
+      id: "add-deployment-contract",
+      title: "Document deployment contract",
+      category: "deployment",
+      risk: "medium",
+      status: "pending",
+      summary: "No Dockerfile was detected. Even if Docker is not used, document the runtime version, build command, start command, health check, and rollback path.",
+      action: { type: "append-review-doc", heading: "Deployment contract", body: "Document the app runtime, required environment variables, build/start commands, health check URL, and rollback process." },
+    });
+  }
+
+  fixes.push({ status: "checked", message: "Internet checks completed against GitHub repository metadata and npm registry metadata where applicable." });
 
   fixes.push({
     status: "available-after-approval",
