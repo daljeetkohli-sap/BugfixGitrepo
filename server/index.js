@@ -127,14 +127,35 @@ function runCommand(command, args, options = {}) {
 function isSafePublicGitUrl(repoUrl) {
   try {
     const url = new URL(repoUrl);
-    return ["http:", "https:"].includes(url.protocol) && url.hostname.includes(".");
+    return ["http:", "https:"].includes(url.protocol) && Boolean(normalizeRepoUrl(repoUrl));
   } catch {
     return false;
   }
 }
 
+function normalizeRepoUrl(repoUrl) {
+  try {
+    const url = new URL(repoUrl);
+    const cleanPath = url.pathname.replace(/^\/|\/$/g, "").replace(/\.git$/i, "");
+    if (url.hostname === "github.com") {
+      const [owner, repoName] = cleanPath.split("/");
+      if (!owner || !repoName) return null;
+      return `https://github.com/${owner}/${repoName}.git`;
+    }
+    if (url.hostname.endsWith(".github.io")) {
+      const owner = url.hostname.replace(/\.github\.io$/i, "");
+      const [repoName] = cleanPath.split("/");
+      if (!owner || !repoName) return null;
+      return `https://github.com/${owner}/${repoName}.git`;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function repoSlug(repoUrl) {
-  const parsed = new URL(repoUrl);
+  const parsed = new URL(normalizeRepoUrl(repoUrl) || repoUrl);
   return parsed.pathname
     .replace(/^\/|\.git$/g, "")
     .replace(/[^a-zA-Z0-9._-]+/g, "-")
@@ -179,7 +200,9 @@ async function readOptionalText(file, maxBytes = 200000) {
 
 function parseGitHubRepo(repoUrl) {
   try {
-    const url = new URL(repoUrl);
+    const normalized = normalizeRepoUrl(repoUrl);
+    if (!normalized) return null;
+    const url = new URL(normalized);
     if (url.hostname !== "github.com") return null;
     const [owner, repoName] = url.pathname.replace(/^\/|\.git$/g, "").split("/");
     if (!owner || !repoName) return null;
@@ -972,15 +995,17 @@ async function buildReview(runId, repoUrl, repoDir) {
 }
 
 async function startReview(repoUrl) {
-  if (!isSafePublicGitUrl(repoUrl)) {
-    throw new Error("Enter a public http(s) git repository URL.");
+  const normalizedRepoUrl = normalizeRepoUrl(repoUrl);
+  if (!isSafePublicGitUrl(repoUrl) || !normalizedRepoUrl) {
+    throw new Error("Enter a public GitHub repository URL or GitHub Pages app URL.");
   }
   await ensureState();
   const runId = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
-  const repoDir = path.join(runsDir, `${repoSlug(repoUrl)}-${runId}`);
+  const repoDir = path.join(runsDir, `${repoSlug(normalizedRepoUrl)}-${runId}`);
   const review = {
     id: runId,
-    repoUrl,
+    repoUrl: normalizedRepoUrl,
+    submittedUrl: repoUrl,
     repoDir,
     createdAt: new Date().toISOString(),
     status: "queued",
@@ -991,7 +1016,14 @@ async function startReview(repoUrl) {
       proposalsFound: 0,
       detectedStack: "Queued",
     },
-    logs: [{ at: new Date().toISOString(), level: "info", message: "Background review queued", detail: repoUrl }],
+    logs: [
+      {
+        at: new Date().toISOString(),
+        level: "info",
+        message: "Background review queued",
+        detail: normalizedRepoUrl === repoUrl ? repoUrl : `${repoUrl} -> ${normalizedRepoUrl}`,
+      },
+    ],
     errors: [],
     fixes: [],
     proposals: [],
@@ -1008,7 +1040,7 @@ async function startReview(repoUrl) {
   const state = await readState();
   state[runId] = review;
   await writeState(state);
-  runReviewJob(runId, repoUrl, repoDir);
+  runReviewJob(runId, normalizedRepoUrl, repoDir);
   return review;
 }
 
