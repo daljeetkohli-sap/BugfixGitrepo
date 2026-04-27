@@ -123,6 +123,26 @@ button:disabled {
   opacity: 0.55;
 }
 
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.page-actions a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--soft);
+  color: var(--accent-dark);
+  font-weight: 800;
+  text-decoration: none;
+}
+
 #run-button,
 .approve-button {
   display: inline-flex;
@@ -133,6 +153,17 @@ button:disabled {
   padding: 0 18px;
   background: var(--accent);
   color: #fff;
+}
+
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--ink);
 }
 
 #run-button:hover,
@@ -370,6 +401,96 @@ button:disabled {
   box-shadow: var(--shadow);
 }
 
+.viewer-hero {
+  align-items: center;
+}
+
+.viewer-summary {
+  display: grid;
+  justify-items: start;
+  gap: 14px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.viewer-summary p {
+  margin-bottom: 0;
+}
+
+.viewer-list {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.viewer-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  padding: 20px;
+}
+
+.viewer-card-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.viewer-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 16px;
+}
+
+.viewer-card h3 {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+}
+
+.viewer-card ul {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.viewer-card li {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.viewer-card li span,
+.viewer-card li small,
+.viewer-footer {
+  color: var(--muted);
+}
+
+.viewer-card li small,
+.viewer-footer {
+  overflow-wrap: anywhere;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.viewer-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
 @media (max-width: 820px) {
   .control-band,
   .review-layout,
@@ -398,5 +519,14 @@ button:disabled {
   .proposal .badge {
     grid-column: 2;
     width: fit-content;
+  }
+
+  .viewer-card-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .viewer-card-grid {
+    grid-template-columns: 1fr;
   }
 }
