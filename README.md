@@ -20,6 +20,14 @@ Open the read-only stakeholder view:
 http://localhost:4173/viewer.html
 ```
 
+### Environment variables
+
+- `HOST` (default: `127.0.0.1`) - Bind address for the Node server.
+- `PORT` (default: `4173`) - Server port.
+- `REVIEWER_TOKEN` (optional) - Token required for all `POST /api/*` actions. If unset, the server generates a per-session token and prints it on startup; the operator console prompts for it automatically when needed.
+- `REVIEWER_RUN_SCRIPTS` (default: disabled) - When set to `true`, the reviewer will run `npm run test/build/lint` inside cloned target repos if those scripts exist.
+- `GITHUB_TOKEN` (optional) - Used for authenticated GitHub API requests to reduce rate limiting during metadata/search scans.
+
 The operator console can queue multiple background reviews, show logs, and let a user approve or reject each proposal. Approved proposals are committed into the cloned target repo and pushed back to that app's current branch when credentials allow it. The viewer page is read-only and is intended for someone else to inspect the latest runs, errors, proposals, and approved changes.
 
 Each review checks local repository signals plus internet-sourced metadata where available:

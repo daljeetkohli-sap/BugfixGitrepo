@@ -12,10 +12,14 @@ const publicDir = path.join(rootDir, "public");
 const runsDir = path.join(rootDir, ".adhoc-runs");
 const stateFile = path.join(runsDir, "runs.json");
 const port = Number(process.env.PORT || 4173);
+const host = String(process.env.HOST || "127.0.0.1");
 const progressFileName = "APP_REVIEW_PROGRESS.md";
 const proposalsFileName = "REVIEW_PROPOSALS.md";
 const reviewLogFileName = "DAILY_REVIEW_LOG.md";
 let stateWriteQueue = Promise.resolve();
+const reviewerToken = String(process.env.REVIEWER_TOKEN || "").trim() || crypto.randomBytes(18).toString("hex");
+const allowRepoScripts = /^true$/i.test(String(process.env.REVIEWER_RUN_SCRIPTS || ""));
+const githubToken = String(process.env.GITHUB_TOKEN || "").trim();
 const windowsCommandPaths = {
   git: "C:\\Program Files\\Git\\cmd\\git.exe",
   npm: "C:\\Program Files\\nodejs\\npm.cmd",
@@ -57,6 +61,28 @@ async function updateRun(runId, updater) {
       return nextRun;
     });
   return stateWriteQueue;
+}
+
+function getRequestToken(req) {
+  const rawHeader = req.headers["x-reviewer-token"];
+  if (typeof rawHeader === "string") return rawHeader.trim();
+  if (Array.isArray(rawHeader) && typeof rawHeader[0] === "string") return rawHeader[0].trim();
+  const rawAuth = req.headers.authorization;
+  if (typeof rawAuth === "string") {
+    const match = rawAuth.match(/^Bearer\s+(.+)$/i);
+    if (match) return match[1].trim();
+  }
+  return "";
+}
+
+function isAuthorized(req) {
+  const provided = getRequestToken(req);
+  if (!provided) return false;
+  const expected = reviewerToken;
+  const providedBuf = Buffer.from(provided, "utf8");
+  const expectedBuf = Buffer.from(expected, "utf8");
+  if (providedBuf.length !== expectedBuf.length) return false;
+  return crypto.timingSafeEqual(providedBuf, expectedBuf);
 }
 
 function sendJson(res, status, body) {
@@ -214,30 +240,43 @@ function parseGitHubRepo(repoUrl) {
 
 async function fetchGitHubRepoMetadata(repoUrl) {
   const parsed = parseGitHubRepo(repoUrl);
-  if (!parsed) return null;
+  if (!parsed) return { metadata: null, error: "URL is not a GitHub repository." };
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 4500);
   try {
+    const headers = {
+      accept: "application/vnd.github+json",
+      "user-agent": "adhoc-github-reviewer",
+    };
+    if (githubToken) headers.authorization = `Bearer ${githubToken}`;
     const response = await fetch(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}`, {
       signal: controller.signal,
-      headers: {
-        accept: "application/vnd.github+json",
-        "user-agent": "adhoc-github-reviewer",
-      },
+      headers,
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      const remaining = response.headers.get("x-ratelimit-remaining");
+      const reset = response.headers.get("x-ratelimit-reset");
+      const rateLimitSuffix =
+        remaining === "0"
+          ? ` (rate limited; resets at ${reset ? new Date(Number(reset) * 1000).toISOString() : "unknown"})`
+          : "";
+      return { metadata: null, error: `GitHub API ${response.status} for repo metadata${rateLimitSuffix}` };
+    }
     const data = await response.json();
     return {
-      defaultBranch: data.default_branch,
-      openIssues: data.open_issues_count,
-      pushedAt: data.pushed_at,
-      license: data.license?.spdx_id || null,
-      archived: Boolean(data.archived),
-      visibility: data.visibility,
-      watchers: data.watchers_count,
+      metadata: {
+        defaultBranch: data.default_branch,
+        openIssues: data.open_issues_count,
+        pushedAt: data.pushed_at,
+        license: data.license?.spdx_id || null,
+        archived: Boolean(data.archived),
+        visibility: data.visibility,
+        watchers: data.watchers_count,
+      },
+      error: null,
     };
   } catch {
-    return null;
+    return { metadata: null, error: "GitHub API request failed (timeout or network error)." };
   } finally {
     clearTimeout(timeout);
   }
@@ -580,12 +619,14 @@ async function fetchGitHubComparableRepos(searchTerms, currentRepoUrl) {
     const timeout = setTimeout(() => controller.abort(), 4500);
     try {
       const query = encodeURIComponent(`${term} in:name,description,readme`);
+      const headers = {
+        accept: "application/vnd.github+json",
+        "user-agent": "adhoc-github-reviewer",
+      };
+      if (githubToken) headers.authorization = `Bearer ${githubToken}`;
       const response = await fetch(`https://api.github.com/search/repositories?q=${query}&sort=stars&order=desc&per_page=5`, {
         signal: controller.signal,
-        headers: {
-          accept: "application/vnd.github+json",
-          "user-agent": "adhoc-github-reviewer",
-        },
+        headers,
       });
       if (!response.ok) continue;
       const data = await response.json();
@@ -697,15 +738,15 @@ async function buildReview(runId, repoUrl, repoDir) {
   const marketProducts = await verifyMarketProducts(getMarketProductCatalog(appProfile));
   const targetCapabilities = detectTargetCapabilities(files, packageJson, readmeText);
   const marketFeatureGaps = compareMarketFeatures(marketProducts, targetCapabilities);
-  const githubMetadata = await fetchGitHubRepoMetadata(repoUrl);
-  if (githubMetadata) {
+  const repoMetadataResult = await fetchGitHubRepoMetadata(repoUrl);
+  if (repoMetadataResult.metadata) {
     addLog(
       "success",
       "Internet check: GitHub repository metadata",
-      `default=${githubMetadata.defaultBranch}; openIssues=${githubMetadata.openIssues}; pushedAt=${githubMetadata.pushedAt}; license=${githubMetadata.license || "none"}`,
+      `default=${repoMetadataResult.metadata.defaultBranch}; openIssues=${repoMetadataResult.metadata.openIssues}; pushedAt=${repoMetadataResult.metadata.pushedAt}; license=${repoMetadataResult.metadata.license || "none"}`,
     );
   } else {
-    addLog("error", "Internet check: GitHub repository metadata unavailable", "Could not read GitHub repository metadata for this URL.");
+    addLog("error", "Internet check: GitHub repository metadata unavailable", repoMetadataResult.error || "Could not read GitHub repository metadata for this URL.");
   }
 
   const comparableRepos = await fetchGitHubComparableRepos(appProfile.searchTerms, repoUrl);
@@ -882,12 +923,20 @@ async function buildReview(runId, repoUrl, repoDir) {
   if (packageJson) {
     addLog("info", "Detected Node app", packageJson.name || "package.json found");
     const scripts = packageJson.scripts || {};
-    for (const scriptName of ["test", "build", "lint"]) {
-      if (scripts[scriptName]) {
-        const result = await runCommand("npm", ["run", scriptName, "--if-present"], { cwd: repoDir });
-        addLog(result.code === 0 ? "success" : "error", `npm run ${scriptName}`, result.stderr || result.stdout);
-        if (result.code !== 0) {
-          errors.push({ severity: "high", area: scriptName, message: `${scriptName} script failed`, detail: result.stderr || result.stdout });
+    if (!allowRepoScripts) {
+      addLog(
+        "info",
+        "Skipped running npm scripts in cloned repository",
+        "Set REVIEWER_RUN_SCRIPTS=true to enable running npm run test/build/lint for the target repo.",
+      );
+    } else {
+      for (const scriptName of ["test", "build", "lint"]) {
+        if (scripts[scriptName]) {
+          const result = await runCommand("npm", ["run", scriptName, "--if-present"], { cwd: repoDir });
+          addLog(result.code === 0 ? "success" : "error", `npm run ${scriptName}`, result.stderr || result.stdout);
+          if (result.code !== 0) {
+            errors.push({ severity: "high", area: scriptName, message: `${scriptName} script failed`, detail: result.stderr || result.stdout });
+          }
         }
       }
     }
@@ -1641,6 +1690,10 @@ async function serveStatic(req, res) {
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
+    if (req.method === "POST" && !isAuthorized(req)) {
+      sendJson(res, 401, { error: "Missing or invalid reviewer token. Provide x-reviewer-token or Authorization: Bearer <token>." });
+      return;
+    }
     if (req.method === "POST" && url.pathname === "/api/reviews") {
       const body = await readJson(req);
       const review = await startReview(String(body.repoUrl || "").trim());
@@ -1676,6 +1729,13 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(port, () => {
-  console.log(`Ad hoc review UI running at http://localhost:${port}`);
+server.listen(port, host, () => {
+  console.log(`Ad hoc review UI running at http://${host}:${port}`);
+  console.log("Reviewer token required for POST endpoints (x-reviewer-token / Authorization: Bearer).");
+  if (!process.env.REVIEWER_TOKEN) {
+    console.log(`Generated session token (set REVIEWER_TOKEN to persist): ${reviewerToken}`);
+  }
+  if (!allowRepoScripts) {
+    console.log("Repo scripts disabled. Set REVIEWER_RUN_SCRIPTS=true to enable running npm scripts inside cloned repositories.");
+  }
 });
