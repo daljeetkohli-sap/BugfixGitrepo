@@ -57,13 +57,32 @@ function showToast(message) {
   window.setTimeout(() => toast.classList.add("hidden"), 4200);
 }
 
-async function api(path, options = {}) {
+function getReviewerToken() {
+  return String(window.sessionStorage.getItem("reviewerAuthToken") || "").trim();
+}
+
+async function api(path, options = {}, allowRetry = true) {
+  const token = getReviewerToken();
+  const headers = { "content-type": "application/json", ...(options.headers || {}) };
+  if (token && !headers["x-reviewer-token"] && !headers.authorization) {
+    headers["x-reviewer-token"] = token;
+  }
   const response = await fetch(path, {
-    headers: { "content-type": "application/json", ...(options.headers || {}) },
+    headers,
     ...options,
   });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "Request failed");
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (response.status === 401 && allowRetry) {
+      const nextToken = window.prompt("Enter reviewer token (required for POST actions)", token);
+      if (nextToken === null) throw new Error(data.error || "Request failed");
+      const trimmed = nextToken.trim();
+      if (trimmed) window.sessionStorage.setItem("reviewerAuthToken", trimmed);
+      else window.sessionStorage.removeItem("reviewerAuthToken");
+      return api(path, options, false);
+    }
+    throw new Error(data.error || "Request failed");
+  }
   return data;
 }
 
