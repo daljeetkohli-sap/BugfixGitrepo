@@ -9,6 +9,6 @@
     "check": "node --check server/index.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   }
 }

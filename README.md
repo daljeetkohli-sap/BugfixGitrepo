@@ -26,6 +26,9 @@ http://localhost:4173/viewer.html
 - `PORT` (default: `4173`) - Server port.
 - `REVIEWER_TOKEN` (optional) - Token required for all `POST /api/*` actions. If unset, the server generates a per-session token and prints it on startup; the operator console prompts for it automatically when needed.
 - `REVIEWER_RUN_SCRIPTS` (default: disabled) - When set to `true`, the reviewer will run `npm run test/build/lint` inside cloned target repos if those scripts exist.
+- `REVIEWER_COMMAND_TIMEOUT_MS` (default: `180000`) - Timeout for spawned `git`/`npm` commands in cloned repositories (milliseconds).
+- `REVIEWER_MAX_REQUEST_BYTES` (default: `200000`) - Maximum JSON request body size accepted by the API server (bytes).
+- `REVIEWER_RUN_RETENTION_DAYS` (default: `14`) - Prune review run folders and state entries older than this many days.
 - `GITHUB_TOKEN` (optional) - Used for authenticated GitHub API requests to reduce rate limiting during metadata/search scans.
 
 The operator console can queue multiple background reviews, show logs, and let a user approve or reject each proposal. Approved proposals are committed into the cloned target repo and pushed back to that app's current branch when credentials allow it. The viewer page is read-only and is intended for someone else to inspect the latest runs, errors, proposals, and approved changes.

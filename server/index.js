@@ -20,6 +20,21 @@ let stateWriteQueue = Promise.resolve();
 const reviewerToken = String(process.env.REVIEWER_TOKEN || "").trim() || crypto.randomBytes(18).toString("hex");
 const allowRepoScripts = /^true$/i.test(String(process.env.REVIEWER_RUN_SCRIPTS || ""));
 const githubToken = String(process.env.GITHUB_TOKEN || "").trim();
+const maxRequestBytes = (() => {
+  const value = Number(process.env.REVIEWER_MAX_REQUEST_BYTES || "");
+  if (!Number.isFinite(value) || value <= 0) return 200000;
+  return Math.max(1024, Math.floor(value));
+})();
+const defaultCommandTimeoutMs = (() => {
+  const value = Number(process.env.REVIEWER_COMMAND_TIMEOUT_MS || "");
+  if (!Number.isFinite(value) || value <= 0) return 180000;
+  return Math.max(1000, Math.floor(value));
+})();
+const retentionMs = (() => {
+  const value = Number(process.env.REVIEWER_RUN_RETENTION_DAYS || "");
+  if (!Number.isFinite(value) || value <= 0) return 14 * 24 * 60 * 60 * 1000;
+  return Math.max(1, Math.floor(value)) * 24 * 60 * 60 * 1000;
+})();
 const windowsCommandPaths = {
   git: "C:\\Program Files\\Git\\cmd\\git.exe",
   npm: "C:\\Program Files\\nodejs\\npm.cmd",
@@ -37,6 +52,41 @@ async function ensureState() {
   await fs.mkdir(runsDir, { recursive: true });
   if (!existsSync(stateFile)) {
     await fs.writeFile(stateFile, "{}", "utf8");
+  }
+}
+
+async function pruneOldRuns() {
+  await ensureState();
+  const now = Date.now();
+  let state;
+  try {
+    state = await readState();
+  } catch {
+    return;
+  }
+  const entries = Object.entries(state);
+  let changed = false;
+  for (const [runId, review] of entries) {
+    const createdAt = review?.createdAt ? Date.parse(review.createdAt) : NaN;
+    if (!Number.isFinite(createdAt) || now - createdAt <= retentionMs) continue;
+
+    const repoDir = review?.repoDir ? String(review.repoDir) : "";
+    if (repoDir) {
+      const resolved = path.resolve(repoDir);
+      if (resolved.startsWith(runsDir)) {
+        try {
+          await fs.rm(resolved, { recursive: true, force: true });
+        } catch {
+          // Ignore cleanup errors and still prune the state entry.
+        }
+      }
+    }
+
+    delete state[runId];
+    changed = true;
+  }
+  if (changed) {
+    await writeState(state);
   }
 }
 
@@ -91,8 +141,15 @@ function sendJson(res, status, body) {
 }
 
 async function readJson(req) {
+  let bytes = 0;
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+  for await (const chunk of req) {
+    bytes += chunk.length;
+    if (bytes > maxRequestBytes) {
+      throw new Error(`Request body too large; limit is ${maxRequestBytes} bytes.`);
+    }
+    chunks.push(chunk);
+  }
   if (!chunks.length) return {};
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
@@ -104,9 +161,12 @@ function runCommand(command, args, options = {}) {
     const isWindowsCmd = process.platform === "win32" && executable.toLowerCase().endsWith(".cmd");
     const spawnCommand = isWindowsCmd ? "cmd.exe" : executable;
     const spawnArgs = isWindowsCmd ? ["/d", "/s", "/c", `"${executable}" ${args.join(" ")}`] : args;
+    const timeoutMs = Number.isFinite(options.timeoutMs) ? Math.max(0, Math.floor(options.timeoutMs)) : defaultCommandTimeoutMs;
     let stdout = "";
     let stderr = "";
     let child;
+    let timedOut = false;
+    let timer = null;
     try {
       child = spawn(spawnCommand, spawnArgs, {
         cwd: options.cwd || rootDir,
@@ -123,6 +183,17 @@ function runCommand(command, args, options = {}) {
       });
       return;
     }
+
+    if (timeoutMs > 0) {
+      timer = setTimeout(() => {
+        timedOut = true;
+        try {
+          child.kill();
+        } catch {
+          // ignore
+        }
+      }, timeoutMs);
+    }
     child.stdout.on("data", (data) => {
       stdout += data.toString();
     });
@@ -130,6 +201,7 @@ function runCommand(command, args, options = {}) {
       stderr += data.toString();
     });
     child.on("error", (error) => {
+      if (timer) clearTimeout(timer);
       resolve({
         command: [spawnCommand, ...spawnArgs].join(" "),
         code: -1,
@@ -139,11 +211,12 @@ function runCommand(command, args, options = {}) {
       });
     });
     child.on("close", (code) => {
+      if (timer) clearTimeout(timer);
       resolve({
         command: [spawnCommand, ...spawnArgs].join(" "),
-        code,
+        code: timedOut ? -1 : code,
         stdout: stdout.trim(),
-        stderr: stderr.trim(),
+        stderr: timedOut ? `${stderr.trim()}\nTIMEOUT after ${timeoutMs}ms`.trim() : stderr.trim(),
         durationMs: Date.now() - startedAt,
       });
     });
@@ -1102,7 +1175,7 @@ async function runReviewJob(runId, repoUrl, repoDir) {
     logs: [...(review?.logs || []), { at: new Date().toISOString(), level: "info", message: "Background review started", detail: repoUrl }],
   }));
 
-  const clone = await runCommand("git", ["clone", "--depth", "1", repoUrl, repoDir], { cwd: rootDir });
+  const clone = await runCommand("git", ["clone", "--depth", "1", repoUrl, repoDir], { cwd: rootDir, timeoutMs: 10 * 60 * 1000 });
   if (clone.code !== 0) {
     await updateRun(runId, (review) => ({
       ...review,
@@ -1728,6 +1801,11 @@ const server = createServer(async (req, res) => {
     sendJson(res, 400, { error: error.message || "Request failed" });
   }
 });
+
+pruneOldRuns().catch(() => {});
+setInterval(() => {
+  pruneOldRuns().catch(() => {});
+}, 6 * 60 * 60 * 1000);
 
 server.listen(port, host, () => {
   console.log(`Ad hoc review UI running at http://${host}:${port}`);
